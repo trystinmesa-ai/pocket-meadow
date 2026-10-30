@@ -264,7 +264,7 @@ export class Renderer {
     const cx = X + W / 2, by = Y + H;
     if (o.type === 'plot') {
       const st = o.st === 'empty' ? -1 : o.st === 'ripe' ? 3 : o.p < 0.15 ? 0 : o.p < 0.55 ? 1 : 2;
-      if (st >= 0) {
+      if (st >= 0 && o.crop) {
         const cs = cropSprite(o.crop, st);
         // gentle sway: draw the top part shifted
         const sway = Math.round(Math.sin(t * 1.6 + o.x * 0.7 + o.y * 0.3) * 0.8);

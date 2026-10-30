@@ -10,7 +10,7 @@ import { itemURL } from './art/items.js';
 import { buildingSprite } from './art/buildings.js';
 import { decorSprite, fenceSprite } from './art/decor.js';
 import { cropSprite, treeSprite, FRUIT_COLOR } from './art/plants.js';
-import { pathThumb } from './art/land.js';
+import { pathThumb, soilTile } from './art/land.js';
 import { workerFrame, petFrame } from './art/chars.js';
 import { fmtShort } from './render.js';
 import * as Cloud from './cloud.js';
@@ -38,7 +38,7 @@ function thumb(type, extra) {
   if (thumbCache.has(key)) return thumbCache.get(key);
   const d = DEFS[type];
   let cv;
-  if (type === 'plot') cv = cropSprite(extra || 'wheat', 3);
+  if (type === 'plot') cv = extra ? cropSprite(extra, 3) : soilTile(false, 0);
   else if (d.cat === 'tree') cv = treeSprite(d.look, FRUIT_COLOR[d.look]);
   else if (d.cat === 'path') cv = pathThumb(type);
   else if (d.cat === 'fence') cv = fenceSprite(type, 10);
@@ -74,7 +74,7 @@ function usesHTML(item, max = 7) {
   const u = USES[item] || [];
   if (!u.length) return '';
   const outs = [...new Set(u.filter((x) => x.out).map((x) => x.out))];
-  const extra = [...new Set(u.filter((x) => x.feeds).map((x) => `feeds ${x.feeds}s`))];
+  const extra = [...new Set(u.filter((x) => x.feeds).map((x) => `feeds ${x.feeds === 'sheep' ? x.feeds : x.feeds + 's'}`))];
   if (u.some((x) => x.bees)) extra.push('helps bees');
   return `<div class="uses"><span>Used for</span>${outs.slice(0, max).map((k) => infoImg(k)).join('')}${outs.length > max ? `<small>+${outs.length - max}</small>` : ''}${extra.length ? `<small>${extra.join(' · ')}</small>` : ''}</div>`;
 }
@@ -163,7 +163,7 @@ export class UI {
       case 'upgradeb': if (fail(E.upgradeBuilding(w, this.sel))) { this.toast(`${DEFS[this.sel.type].name} upgraded to level ${this.sel.lvl}!`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'recipe': this.sel.recipe = d.value; curRecipe(w, this.sel); this.g.dirty(); this.renderCard(); break;
       case 'setcrop': if (fail(E.setCrop(w, this.sel, d.crop))) { this.g.dirty(); this.renderCard(); } break;
-      case 'cropfield': this.cropField(this.sel, this.sel.next || this.sel.crop); break;
+      case 'cropfield': if (this.sel.next || this.sel.crop) this.cropField(this.sel, this.sel.next || this.sel.crop); break;
       case 'buyseedcard': if (fail(E.buySeed(w, d.crop))) { E.setCrop(w, this.sel, d.crop); this.g.dirty(); this.renderCard(); } break;
       case 'fire': { const wk = s.workers.find((x) => x.id === +d.id); if (wk) this.askFire(wk); break; }
       case 'iteminfo': this.itemInfo(d.item); break;
@@ -189,7 +189,17 @@ export class UI {
       case 'buyland': { const [px, py] = this.mode.sel; if (fail(E.buyParcel(w, px, py))) { this.toast('New land! Room to grow.', 'good'); this.g.dirty(); this.mode.sel = null; this.renderPlacebar(); } break; }
       // goals & achievements
       case 'claim': this.claimGoal(); break;
-      case 'claimach': { const a = ACHIEVEMENTS.find((x) => x.id === d.id); const tier = (s.ach[d.id] || 0); if (fail(E.claimAch(w, d.id))) { this.toast(`${a.name} ${roman(tier + 1)}! +${fmt(achReward(a, tier))} coins`, 'good'); this.coinPop(el); const hat = Object.entries(HATS).find(([, h]) => h.ach === `${d.id}:${tier}`); if (hat) this.toast(`New hat unlocked: ${hat[1].name}!`, 'good'); this.g.dirty(); this.renderSheet(); } break; }
+      case 'claimach': {
+        // one tap claims every tier already reached, so the button goes away
+        const a = ACHIEVEMENTS.find((x) => x.id === d.id), from = s.ach[d.id] || 0;
+        let got = 0;
+        while (E.achState(w, a).ready) { got += achReward(a, s.ach[d.id] || 0); E.claimAch(w, d.id); }
+        const to = s.ach[d.id] || 0;
+        if (to === from) break;
+        this.toast(`${a.name} ${roman(to)}! +${fmt(got)} coins`, 'good'); this.coinPop(el);
+        for (let t = from; t < to; t++) { const hat = Object.entries(HATS).find(([, h]) => h.ach === `${d.id}:${t}`); if (hat) this.toast(`New hat unlocked: ${hat[1].name}!`, 'good'); }
+        this.g.dirty(); this.renderSheet(); break;
+      }
       case 'fillfest': { const o = s.fest?.orders.find((x) => x.id === +d.id); if (o && fail(E.fillFestOrder(w, o))) { this.toast(`Delivered to the fair! +${o.ribbons} ribbons`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
       case 'petkind': this.petPick = { kind: d.v, color: 0 }; this.renderSheet(); break;
       case 'petcolor': this.petPick.color = +d.v; this.renderSheet(); break;
@@ -314,17 +324,17 @@ export class UI {
     const t = BUILD_TABS.find((x) => x.id === tab);
     let html = '';
     if (tab === 'field') {
-      html += `<p class="hint">Pick a crop, then tap or drag on your land to lay field plots. Each new plot costs a little more than the last. Farmers then pay for seeds each time they plant. Tap a crop picture to see what it is for.</p><div class="grid">`;
+      html += `<p class="hint">Buy field plots and tap or drag to lay them on your land. Each new plot costs a bit more than the last. Then tap a plot to pick its seed. Farmers pay the seed price each time they plant.</p><div class="grid">${this.buildTile('plot')}</div>`;
+      html += `<h3>Seeds</h3><p class="hint">Unlock seeds here, then choose them on a plot. Tap a crop picture to see what it is for.</p><div class="grid">`;
       for (const c of CROP_ORDER) {
         const cr = CROPS[c], it = ITEMS[c];
         const lockLvl = s.level < cr.level, owned = !!s.seeds[c];
-        const cost = E.costOf(w, 'plot');
         let btn;
         const sea = seasonAt(Date.now());
         const tag = cr.season ? `<span class="stag ${cr.season === sea.id ? 'on' : ''}">${img(cr.season)} ${SEASONS.find((x) => x.id === cr.season).name} only</span>` : inSeason(c, sea) ? `<span class="stag on">${img(sea.id)} In season +${Math.round((SEASON_BONUS - 1) * 100)}%</span>` : '';
         if (lockLvl) btn = `<span class="lock">${img('lock')} Lv ${cr.level}</span>`;
         else if (!owned) btn = `<button class="btn small" data-act="seed" data-crop="${c}" data-need="${cr.cost}">Unlock ${coin(cr.cost)}</button>`;
-        else btn = `<button class="btn small green" data-act="pick" data-type="plot" data-crop="${c}">Plot ${coin(cost)}</button>`;
+        else btn = '<span class="max">UNLOCKED</span>';
         html += `<div class="tile ${lockLvl ? 'locked' : ''}"><button class="ib" data-act="iteminfo" data-item="${c}"><img class="thumb" src="${thumb('plot', c)}" alt=""></button><div class="tn">${it.name}</div>
           <div class="tm">${img('clock')}${fmtTime(cr.time)} · ${cr.yield}× ${coin(it.value)}${cr.regrow ? ' · regrows' : ''}</div><div class="tm">Seeds ${cr.seed ? coin(cr.seed) : 'free'} each planting</div>${tag}${btn}</div>`;
       }
@@ -705,6 +715,7 @@ export class UI {
       : `<button class="btn small green" data-act="upgradeb" data-need="${E.bUpgradeCost(o)}">${img('up')} Upgrade ${coin(E.bUpgradeCost(o))}</button>`) : '';
     const lvl = o.lvl ? ` <span class="lv">Lv ${o.lvl}${d.maxLvl ? `/${d.maxLvl}` : ''}</span>` : '';
     const base = { icon: `<img class="thumb" src="${thumb(o.type, o.crop)}" alt="">`, title: d.name + lvl, btns: upBtn + moveBtn + rmBtn };
+    if (o.type === 'plot' && !o.crop) return this.bareCard(o, base, moveBtn, rmBtn);
     if (o.type === 'plot') {
       const cr = CROPS[o.crop];
       const status = () => {
@@ -724,7 +735,7 @@ export class UI {
           <div class="chips">${crops}</div>
           <p class="hint">Tap a crop to grow it here. Anything already planted finishes and gets harvested first. Numbers are the seed price per planting.</p>
           ${this.workTip('field')}`,
-        btns: `<button class="btn small" data-act="iteminfo" data-item="${o.crop}">${img('book')} About ${ITEMS[o.crop].name}</button><button class="btn small" data-act="cropfield">Plant whole field</button>` + moveBtn + rmBtn,
+        btns: `<button class="btn small" data-act="iteminfo" data-item="${o.crop}">${img('book')} About ${ITEMS[o.crop].name}</button><button class="btn small" data-act="cropfield">Same seed on whole field</button>` + moveBtn + rmBtn,
         live: () => ({ st: status(), pb: `<i style="width:${o.p * 100}%"></i>` }) };
     }
     if (d.cat === 'tree') {
@@ -792,6 +803,19 @@ export class UI {
     return { ...base, sub: d.desc || (d.charm ? 'Decoration' : ''), body: extra.length ? `<p class="hint">${extra.join(' ')}</p>` : '' };
   }
 
+  bareCard(o, base, moveBtn, rmBtn) {
+    const s = this.s;
+    const chips = CROP_ORDER.filter((c) => s.level >= CROPS[c].level).map((c) => s.seeds[c]
+      ? `<button class="chip" data-act="setcrop" data-crop="${c}" title="${ITEMS[c].name} · seeds ${CROPS[c].seed}">${itemImg(c)}<small>${fmtShort(CROPS[c].seed)}</small></button>`
+      : `<button class="chip lockchip" data-act="buyseedcard" data-crop="${c}" data-need="${CROPS[c].cost}" title="Unlock ${ITEMS[c].name}">${itemImg(c)}<small>${img('lock')}${fmtShort(CROPS[c].cost)}</small></button>`).join('');
+    return { ...base, title: 'Bare plot', sub: 'Tilled and ready for seeds',
+      body: `<div class="status">Pick a seed for farmers to plant here</div>
+        <div class="chips">${chips}</div>
+        <p class="hint">Numbers are the seed price, paid each time a farmer plants. After picking, use “Same seed on whole field” to fill the plots next to it.</p>
+        ${this.workTip('field')}`,
+      btns: moveBtn + rmBtn };
+  }
+
   cropField(plot, crop) {
     // change every connected plot to this crop
     const w = this.w, seen = new Set(), stack = [plot];
@@ -830,7 +854,7 @@ export class UI {
     const rows = (USES[k] || []).map((u) => {
       const at = DEFS[u.at], lvl = Math.max(at.level, u.r?.level || 0), lock = s.level < lvl ? ` ${img('lock')} Lv ${lvl}` : '';
       if (u.out) return `<div class="recipe">${Object.entries(u.r.in).map(([i, q]) => `<span>${infoImg(i)}${q}</span>`).join('<i>+</i>')}<i>→</i><span>${infoImg(u.out)}</span><b>${ITEMS[u.out].name}</b><small>${at.name}${lock}</small></div>`;
-      if (u.feeds) return `<div class="recipe">Feeds the ${u.feeds}s<small>${at.name}${lock}</small></div>`;
+      if (u.feeds) return `<div class="recipe">Feeds the ${u.feeds === 'sheep' ? u.feeds : u.feeds + 's'}<small>${at.name}${lock}</small></div>`;
       return `<div class="recipe">Bees nearby make honey faster<small>${at.name}${lock}</small></div>`;
     }).join('');
     const html = `<h2>${itemImg(k, 'pi big')} ${it.name}</h2><div class="facts">${facts.filter(Boolean).map((f) => `<span>${f}</span>`).join('')}</div>
@@ -927,9 +951,9 @@ export class UI {
     if (m.k === 'paint' || m.k === 'place') {
       const d = DEFS[m.type];
       const cost = E.costOf(this.w, m.type);
-      const name = m.type === 'plot' ? `${ITEMS[m.extra.crop].name} field` : d.name;
+      const name = d.name;
       const why = m.k === 'place' ? this.w.canPlace(m.type, m.x, m.y) : '';
-      const tip = m.k === 'paint' ? `${m.type === 'plot' ? `Price is for the plot, rising ${coin(2)} each; seeds are ${coin(CROPS[m.extra.crop].seed)} per planting. ` : ''}Tap or drag to place. Two fingers to move the view.` : why ? `<span class="why">${why}</span>` : 'Tap where it should go, then press the check.';
+      const tip = m.k === 'paint' ? `${m.type === 'plot' ? 'Each new plot costs a bit more. Tap a plot afterwards to pick its seed. ' : ''}Tap or drag to place. Two fingers to move the view.` : why ? `<span class="why">${why}</span>` : 'Tap where it should go, then press the check.';
       html = `<img class="thumb sm" src="${thumb(m.type, m.extra?.crop)}" alt=""><div class="pt"><b>${name}</b> ${d.ribbons ? ribbon(d.ribbons) : coin(cost)}<small>${tip}</small></div>
         ${m.k === 'place' ? `<button class="btn green icon" data-act="confirm" aria-label="Place" ${this.w.canPlace(m.type, m.x, m.y) || this.s.coins < cost ? 'disabled' : ''}>${img('check')}</button>` : ''}
         <button class="btn icon" data-act="cancelmode" aria-label="Done">${m.k === 'paint' ? 'Done' : img('x')}</button>`;
@@ -1033,10 +1057,7 @@ export class UI {
       return;
     }
     const existing = w.objAt(tx, ty);
-    if (existing && existing.type === 'plot' && m.type === 'plot') {
-      if (existing.crop !== m.extra.crop) { E.setCrop(w, existing, m.extra.crop); this.g.dirty(); }
-      return;
-    }
+    if (existing && existing.type === 'plot' && m.type === 'plot') return;
     const why = E.place(w, m.type, tx, ty, { ...m.extra });
     if (why) { if (single) this.toast(why, 'bad'); else this.stroke?.errs.add(why); }
     else { this.g.dirty(); if (this.stroke) this.stroke.n++; }

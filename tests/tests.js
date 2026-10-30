@@ -378,6 +378,23 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   E.setCrop(w, q, 'wheat');
   run(w, 20, true);
   ok(q.st === 'grow' && w.state.coins === 0, 'A broke farm can still plant wheat, so it never gets stuck');
+  // plots are bought bare, then given a seed
+  {
+  const w = fresh();
+  w.state.coins = 1000;
+  const c1 = E.costOf(w, 'plot');
+  ok(E.place(w, 'plot', 23, 21) === '', 'A bare plot can be bought');
+  const b = w.objAt(23, 21);
+  ok(b.crop === null && E.costOf(w, 'plot') > c1, 'It starts with no seed, and the next plot costs more', `${c1} -> ${E.costOf(w, 'plot')}`);
+  ok(DEFS.plot.cost(100) > DEFS.plot.cost(50) * 2, 'Plot prices climb faster as the farm grows', `${DEFS.plot.cost(50)} / ${DEFS.plot.cost(100)}`);
+  for (const q of w.plots) if (q !== b) { q.crop = 'pumpkin'; q.st = 'grow'; q.p = 0; }
+  run(w, 20, true);
+  ok(b.st === 'empty', 'Farmers leave a bare plot alone');
+  E.setCrop(w, b, 'carrot');
+  const c0 = w.state.coins;
+  run(w, 20, true);
+  ok(b.crop === 'carrot' && b.st === 'grow' && c0 - w.state.coins === CROPS.carrot.seed, 'Picking a seed gets it planted, paying only the seed price', `paid ${c0 - w.state.coins}`);
+  }
   // switching a ripe plot doesn't change what's growing
   p.st = 'ripe'; p.p = 1;
   E.setCrop(w, p, 'carrot');

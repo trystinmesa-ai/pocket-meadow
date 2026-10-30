@@ -180,8 +180,8 @@ export const BEE_FLOWERS = new Set(['sunflower', 'lavender', 'raspberry']);
 const grow = (base, k) => (n) => Math.round(base * Math.pow(k, n));
 
 export const DEFS = {
-  plot: { name: 'Field Plot', cat: 'field', w: 1, h: 1, walk: true, level: 1, cost: (n) => 8 + 2 * n,
-    desc: 'Tilled soil. Choose a crop and farmers plant, water and harvest it.' },
+  plot: { name: 'Field Plot', cat: 'field', w: 1, h: 1, walk: true, level: 1, cost: (n) => 8 + 2 * n + Math.floor((n * n) / 25),
+    desc: 'Bare tilled soil. Tap one to pick its seed, and farmers plant, water and harvest it.' },
 
   // fruit trees
   appletree:  { name: 'Apple Tree', cat: 'tree', w: 1, h: 1, level: 4, cost: grow(250, 1.25), fruit: 'apple', time: 300, yield: 4, look: 'apple',
@@ -624,7 +624,7 @@ export const RAIN_CHANCE = 0.14;
 const count = (w, type) => w.objects.filter((o) => o.type === type).length;
 export const GOALS = [
   { text: 'Hire a farmer (Farmhands menu)', n: 1, check: (s) => s.workers.filter((w) => w.role === 'farmer').length, reward: 30 },
-  { text: 'Build 4 wheat field plots', n: 4, check: (s, w) => w.plots.length, reward: 40 },
+  { text: 'Build 4 field plots and pick wheat seeds', n: 4, check: (s, w) => w.plots.filter((p) => p.crop === 'wheat').length, reward: 40 },
   { text: 'Harvest 30 wheat', n: 30, check: (s) => s.stats.harvest.wheat || 0, reward: 50 },
   { text: 'Sell goods at the market', n: 1, check: (s) => (s.stats.soldCoins > 0 ? 1 : 0), reward: 30 },
   { text: 'Plant some carrots', n: 4, check: (s, w) => w.plots.filter((p) => p.crop === 'carrot').length, reward: 50 },

@@ -327,7 +327,7 @@ const FIND = {
   plant(world, w) {
     if (!world.avail.empty) return null;
     const s = world.state;
-    const p = nearest(world.plots, w, (o) => o.st === 'empty' && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && canPlantNow(o.crop, world.season) && canAffordSeeds(world, o.crop));
+    const p = nearest(world.plots, w, (o) => o.st === 'empty' && o.crop && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && canPlantNow(o.crop, world.season) && canAffordSeeds(world, o.crop));
     if (!p) return null;
     const job = new Job(w, 'plant', `Planting ${ITEMS[p.crop].name}`).claim(p, '_c');
     job.go(p.x, p.y, p.id).do('hoe', wDur(world, w, 1.0), () => {
