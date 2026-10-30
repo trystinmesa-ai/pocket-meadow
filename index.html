@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Pocket Meadow</title>
+  <meta name="description" content="A cozy idle farming game. Your little farmhands keep working while you're away.">
+  <meta name="theme-color" content="#3e7531">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Meadow">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="vignette"></div>
+  <div id="hud"></div>
+  <div id="goal" hidden></div>
+  <div id="zoom"></div>
+  <div id="toasts"></div>
+  <div id="card"></div>
+  <div id="placebar"></div>
+  <div id="sheet"></div>
+  <nav id="dock"></nav>
+  <div id="modal"></div>
+  <div id="catchup"><div class="mbox"><h2>Catching up…</h2><p>Your farmhands kept busy while you were away.</p><div class="bar big"><i></i></div></div></div>
+  <div id="boot"><div><h1>Pocket Meadow</h1><p>Waking up the farm…</p></div></div>
+  <noscript><p style="padding:24px">Pocket Meadow needs JavaScript to run.</p></noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
