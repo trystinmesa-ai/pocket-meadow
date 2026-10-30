@@ -1,6 +1,6 @@
 // Offline support: cache the game files and serve them cache-first.
 // Cloud saves (Supabase, another origin) always go to the network.
-const VERSION = 'meadow-v1.3.0';
+const VERSION = 'meadow-v1.3.1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/data.js', 'js/world.js', 'js/sim.js', 'js/economy.js', 'js/path.js', 'js/render.js',

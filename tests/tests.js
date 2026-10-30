@@ -374,6 +374,10 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   const q = w.plots[1]; q.st = 'empty'; E.setCrop(w, q, 'pumpkin');
   run(w, 20, true);
   ok(q.st === 'empty', 'Nothing gets planted without coins for the seeds');
+  ok(CROPS.wheat.seed === 1, 'Wheat seeds are cheap but not free', `${CROPS.wheat.seed}`);
+  E.setCrop(w, q, 'wheat');
+  run(w, 20, true);
+  ok(q.st === 'grow' && w.state.coins === 0, 'A broke farm can still plant wheat, so it never gets stuck');
   // switching a ripe plot doesn't change what's growing
   p.st = 'ripe'; p.p = 1;
   E.setCrop(w, p, 'carrot');

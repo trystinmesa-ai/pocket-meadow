@@ -112,11 +112,14 @@ export function setCrop(world, plot, crop) {
 
 // ---------- seeds per planting ----------
 // Farmers pay for seeds as they plant. Away from the game, earnings wait in
-// pendingCoins, so planting can use those too.
-export const canAffordSeeds = (world, crop) => world.state.coins + world.state.pendingCoins >= CROPS[crop].seed;
+// pendingCoins, so planting can use those too. A broke farm still gets wheat
+// seeds for whatever it has left, so it can never get stuck.
+const funds = (s) => Math.max(0, s.coins) + Math.max(0, s.pendingCoins);
+export const canAffordSeeds = (world, crop) => crop === 'wheat' || funds(world.state) >= CROPS[crop].seed;
 export function paySeeds(world, crop) {
-  const s = world.state, n = CROPS[crop].seed;
+  const s = world.state;
   if (!canAffordSeeds(world, crop)) return false;
+  const n = Math.min(CROPS[crop].seed, funds(s));
   const fromCoins = Math.min(n, s.coins);
   s.coins -= fromCoins;
   s.pendingCoins -= n - fromCoins;

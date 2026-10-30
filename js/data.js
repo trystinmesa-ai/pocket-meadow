@@ -485,13 +485,13 @@ for (const c in CROPS) addTo(SOURCES, c, 'plot');
 // Everything follows from what one harvest sells for: pricier crops cost more
 // to plant and take longer, while earning a bit more per second. Crops with
 // more uses, regrowing crops and seasonal crops give up some raw-sale profit
-// in exchange for that extra benefit. Wheat seeds stay free so a farm with no
-// coins can always start again.
+// in exchange for that extra benefit. Wheat seeds are the cheapest, and a farm
+// with no coins at all still gets them free, so it can always start again.
 export const SEED_SHARE = 0.25;
 for (const [id, c] of Object.entries(CROPS)) {
   const harvest = ITEMS[id].value * c.yield;
   const uses = (USES[id] || []).length;
-  c.seed = id === 'wheat' ? 0 : Math.max(1, Math.round(harvest * SEED_SHARE));
+  c.seed = Math.max(1, Math.round(harvest * SEED_SHARE));
   let rate = (0.1 * Math.pow(harvest / 4, 0.25)) / (1 + 0.06 * Math.max(0, uses - 1)); // coins per second, sold raw
   if (c.season) rate *= 1.25;
   // regrowing crops: the first crop takes longer, then it keeps coming back
