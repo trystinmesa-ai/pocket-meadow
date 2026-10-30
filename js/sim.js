@@ -33,8 +33,37 @@ const recipeValueGain = (r) => {
   let v = 0; for (const k in r.in) v += ITEMS[k].value * r.in[k];
   return (ITEMS[r.out].value - v) / r.time;
 };
+// Goods waiting to be picked up: in a workshop, coop or hive, or in a pile on the ground.
+function waiting(world, o, k) {
+  if (o.item) return o.item === k ? o.qty : 0;
+  if (DEFS[o.type].recipes) return o.out[k] || 0;
+  const d = DEFS[o.type], item = d.hive ? d.hive.item : d.animal ? d.animal.item : null;
+  return item === k ? o.out : 0;
+}
+function takeWaiting(world, o, k, n) {
+  if (o.item) {
+    const piles = world.state.piles;
+    if (!piles.includes(o) || o.item !== k) return 0;
+    const t = Math.min(n, o.qty);
+    o.qty -= t;
+    if (o.qty <= 0) piles.splice(piles.indexOf(o), 1);
+    return t;
+  }
+  if (typeof o.out === 'number') { const t = Math.min(n, o.out); o.out -= t; return t; }
+  const t = Math.min(n, o.out[k] || 0);
+  o.out[k] -= t; if (!o.out[k]) delete o.out[k];
+  return t;
+}
+const sourcesOf = (world, k) => world.bldgs.concat(world.animals, world.hives).filter((o) => !o._cc && waiting(world, o, k) > 0)
+  .concat(world.state.piles.filter((p) => !p._c && p.item === k));
+/** Everything on the farm a workshop could use: storage plus goods waiting elsewhere. */
+function onFarm(world, k, except) {
+  let n = world.have(k);
+  for (const o of sourcesOf(world, k)) if (o !== except) n += waiting(world, o, k);
+  return n;
+}
 function feasible(world, b, r) {
-  for (const k in r.in) if ((b.inp[k] || 0) + world.have(k) < r.in[k]) return false;
+  for (const k in r.in) if ((b.inp[k] || 0) + onFarm(world, k, b) < r.in[k]) return false;
   return true;
 }
 const hasInputs = (b, r) => { for (const k in r.in) if ((b.inp[k] || 0) < r.in[k]) return false; return true; };
@@ -427,20 +456,31 @@ const FIND = {
       let need = null, deficit = 0;
       for (const k in r.in) {
         const want = r.in[k] * 2 - (b.inp[k] || 0);
-        if (want > deficit && world.have(k) > 0) { deficit = want; need = k; }
+        if (want > deficit && onFarm(world, k, b) > 0) { deficit = want; need = k; }
       }
       if (need) cand.push({ b, item: need, deficit, x: b.x, y: b.y });
     }
     const c = nearest(cand, w, () => true);
     if (!c) return null;
+    // nothing in storage: carry it straight from where it was made (works with a full barn)
+    if (!world.have(c.item)) {
+      const src = nearest(sourcesOf(world, c.item).filter((o) => o !== c.b), w, () => true);
+      if (!src) return null;
+      return directJob(world, w, src, c.b, c.item, c.deficit, `Bringing ${ITEMS[c.item].name} to the ${DEFS[c.b.type].name}`,
+        (q) => { c.b.inp[c.item] = (c.b.inp[c.item] || 0) + q; });
+    }
     return supplyJob(world, w, c.b, c.item, c.deficit, '_cs', `Bringing ${ITEMS[c.item].name} to the ${DEFS[c.b.type].name}`,
       (q) => { c.b.inp[c.item] = (c.b.inp[c.item] || 0) + q; });
   },
   feed(world, w) {
     if (!world.avail.feedNeed) return null;
-    const a = nearest(world.animals, w, (o) => !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && world.have(DEFS[o.type].animal.feed) > 0);
+    const a = nearest(world.animals, w, (o) => !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && onFarm(world, DEFS[o.type].animal.feed) > 0);
     if (!a) return null;
     const A = DEFS[a.type].animal;
+    if (!world.have(A.feed)) {
+      const src = nearest(sourcesOf(world, A.feed), w, () => true);
+      return src ? directJob(world, w, src, a, A.feed, feedCap(a) - a.feed, `Feeding the ${A.kind}s`, (q) => { a.feed += q; }) : null;
+    }
     return supplyJob(world, w, a, A.feed, feedCap(a) - a.feed, '_cs', `Feeding the ${A.kind}s`, (q) => { a.feed += q; });
   },
   collectAnimal(world, w) {
@@ -555,6 +595,26 @@ function supplyJob(world, w, target, item, want, key, act, put) {
   job.refs.add(target.id);
   job.go(sx, sy, st.id).do('load', wDur(world, w, 0.6), () => {
     const got = world.takeItem(item, Math.min(world.fx.carry, Math.max(1, want)));
+    if (!got) { job.steps.length = job.i; return; }
+    setCarry(w, item, got);
+  }, 'basket');
+  job.go(tx, ty, target.id).do('deposit', wDur(world, w, 0.5), () => {
+    if (!w.carry || w.carry.item !== item) return;
+    put(w.carry.qty);
+    w.carry = null;
+    addXp(world, w, 1);
+  });
+  return job;
+}
+
+function directJob(world, w, src, target, item, want, act, put) {
+  const pile = !!src.item;
+  const [sx, sy] = pile ? [src.x, src.y] : doorTile(src);
+  const [tx, ty] = doorTile(target);
+  const job = new Job(w, 'supply', act).claim(target, '_cs').claim(src, pile ? '_c' : '_cc');
+  job.refs.add(target.id);
+  job.go(sx, sy, src.id).do('load', wDur(world, w, 0.6), () => {
+    const got = takeWaiting(world, src, item, Math.min(world.fx.carry, Math.max(1, want)));
     if (!got) { job.steps.length = job.i; return; }
     setCarry(w, item, got);
   }, 'basket');

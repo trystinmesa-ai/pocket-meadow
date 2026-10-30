@@ -430,6 +430,23 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(!missing.length, 'Every item says where it comes from', missing.join(','));
 }
 
+// 23. a full barn doesn't stop one workshop from feeding another
+{
+  const w = empty(), s = w.state;
+  rich(w, 6, 1e6);
+  const put = (type) => { for (let y = 10; y < 34; y++) for (let x = 8; x < 40; x++) if (E.place(w, type, x, y) === '') return w.objAt(x, y); };
+  const mill = put('mill'), bakery = put('bakery');
+  newWorker(s, 'hauler', 'Bea'); newWorker(s, 'artisan', 'Cy');
+  for (const k of s.workers) { k.x = 20.5; k.y = 20.5; }
+  w.rebuild();
+  w.addItem('carrot', 1e4);
+  mill.out.flour = 6; bakery.recipe = 'potatobread'; bakery.inp.potato = 4;
+  ok(w.free() <= 0, 'Storage is full', `free ${w.free()}`);
+  let t = 0;
+  for (; t < 300 && !(bakery.inp.flour > 0) && !(bakery.out.potatobread > 0); t++) run(w, 1, true);
+  ok(bakery.inp.flour > 0 || bakery.out.potatobread > 0, 'Flour goes straight from the mill to the bakery', `after ${t}s`);
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

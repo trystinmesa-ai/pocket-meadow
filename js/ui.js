@@ -758,6 +758,8 @@ export class UI {
           const miss = Object.keys(r.in).filter((k) => (o.inp[k] || 0) < r.in[k]);
           st = miss.length ? `Waiting for ${miss.map((k) => ITEMS[k].name).join(', ')}` : 'Ready: waiting for an artisan';
         }
+        if (!o._busy && w.free() <= 0) st += '<small class="next">Your storage is full. Sell something or upgrade storage to keep goods moving.</small>';
+        else if (!o._busy && !s.workers.some((x) => x.role === 'artisan') && /artisan/.test(st)) st += '<small class="next">No artisan yet: others only help when they are free.</small>';
         const inp = Object.keys(o.inp).length ? Object.entries(o.inp).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
         const out = n ? Object.entries(o.out).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
         return { st, inp, out: `${out} <small>(${n}/${outCap(o)})</small>`, pb: `<i style="width:${o.prog * 100}%"></i>` };
