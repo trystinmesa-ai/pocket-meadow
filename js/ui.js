@@ -16,7 +16,7 @@ import { fmtShort } from './render.js';
 import * as Cloud from './cloud.js';
 import { exportSave, parseSave } from './save.js';
 import { seasonAt, seasonDaysLeft, festivalOn, untilFestival, inSeason, canPlantNow } from './seasons.js';
-import { SEASONS, SEASON_BONUS, PETS, MAX_PETS } from './data.js';
+import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD } from './data.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -189,6 +189,7 @@ export class UI {
       case 'buyland': { const [px, py] = this.mode.sel; if (fail(E.buyParcel(w, px, py))) { this.toast('New land! Room to grow.', 'good'); this.g.dirty(); this.mode.sel = null; this.renderPlacebar(); } break; }
       // goals & achievements
       case 'claim': this.claimGoal(); break;
+      case 'givebundle': if (fail(E.giveBundle(w, d.id, d.item))) { this.g.dirty(); this.renderSheet(); } break;
       case 'claimach': {
         // one tap claims every tier already reached, so the button goes away
         const a = ACHIEVEMENTS.find((x) => x.id === d.id), from = s.ach[d.id] || 0;
@@ -247,7 +248,7 @@ export class UI {
     const fillable = s.orders.filter((o) => E.canFill(w, o)).length;
     this.badge('orders', fillable || '');
     $('#h-season').classList.toggle('ready', fo > 0);
-    this.badge('journal', E.claimableAch(w) || '');
+    this.badge('journal', E.claimableAch(w) + E.bundlesReady(w) || '');
     this.badge('workers', s.workers.length < w.housing && s.coins >= E.nextHireCost(w) ? '!' : '');
     this.renderGoal();
     if (this.sheet) this.liveSheet();
@@ -392,7 +393,7 @@ export class UI {
     html += '</div><h3>' + img('hat') + ' Hat rack</h3><p class="hint">Earn hats from achievements in the Journal, or buy a few here. Tap a farmhand to dress them up.</p><div class="list">';
     for (const [id, h] of Object.entries(HATS)) {
       const have = E.hatUnlocked(s, id);
-      html += `<div class="urow ${have ? '' : 'locked'}"><img class="ava" src="${hatPreview(id)}" alt=""><div class="ui"><div class="un">${h.name}</div><div class="ud">${have ? 'In your hat rack' : h.cost ? 'For sale' : h.ribbons ? `Festival prize at the ${SEASONS.find((x) => x.id === h.festival).festival}` : `Earned from ${achName(h.ach)}`}</div></div>
+      html += `<div class="urow ${have ? '' : 'locked'}"><img class="ava" src="${hatPreview(id)}" alt=""><div class="ui"><div class="un">${h.name}</div><div class="ud">${have ? 'In your hat rack' : h.cost ? 'For sale' : h.ribbons ? `Festival prize at the ${SEASONS.find((x) => x.id === h.festival).festival}` : h.bundle ? `Reward from the ${E.bundleLabel(h.bundle)}` : `Earned from ${achName(h.ach)}`}</div></div>
         ${have ? '<span class="max">OWNED</span>' : h.cost ? `<button class="btn small" data-act="buyhat" data-id="${id}" data-need="${h.cost}">${coin(h.cost)}</button>` : h.ribbons && !E.seasonalBlock(this.w, h) ? `<button class="btn small" data-act="buyhat" data-id="${id}" ${s.ribbons < h.ribbons ? 'disabled' : ''}>${ribbon(h.ribbons)}</button>` : `<span class="lock">${img('lock')}</span>`}</div>`;
     }
     html += '</div>' + this.petsSection();
@@ -529,6 +530,8 @@ export class UI {
           ${st.ready ? `<button class="btn small gold" data-act="claimach" data-id="${a.id}">Claim ${coin(achReward(a, st.claimed))}</button>` : st.done ? '<span class="max">DONE</span>' : ''}</div>`;
       }
       html += '</div>';
+    } else if (tab === 'bundles') {
+      html += this.bundlesHTML();
     } else {
       const total = Object.keys(ITEMS).length, n = discovered(s);
       html += `<p class="hint">Every crop, fruit and product you have ever gathered or made: <b>${n} / ${total}</b>.</p><div class="collection">`;
@@ -538,7 +541,36 @@ export class UI {
       }
       html += '</div><p class="hint">Tap and hold (or hover) a ??? to see where it comes from.</p>';
     }
-    return { title: `${img('book', 'pi big')} Journal`, tabs: this.tabs('journal', [['goals', 'Goals'], ['ach', `Achievements${E.claimableAch(w) ? ` (${E.claimableAch(w)})` : ''}`], ['collection', 'Collection']]), html };
+    return { title: `${img('book', 'pi big')} Journal`, tabs: this.tabs('journal', [['goals', 'Goals'], ['ach', `Achievements${E.claimableAch(w) ? ` (${E.claimableAch(w)})` : ''}`], ['bundles', `Bundles${E.bundlesReady(w) ? ` (${E.bundlesReady(w)})` : ''}`], ['collection', 'Collection']]), html };
+  }
+
+  rewardHTML(r) {
+    const out = [];
+    if (r.coins) out.push(coin(r.coins));
+    if (r.ribbons) out.push(ribbon(r.ribbons));
+    if (r.decor) out.push(`<span class="need"><img class="thumb xs" src="${thumb(r.decor)}" alt="">${DEFS[r.decor].name}</span>`);
+    if (r.hat) out.push(`<span class="need"><img class="thumb xs" src="${hatPreview(r.hat)}" alt="">${HATS[r.hat].name}</span>`);
+    return out.join(' ');
+  }
+  bundlesHTML() {
+    const w = this.w, s = this.s, sea = seasonAt(Date.now());
+    const total = BUNDLE_ROOMS.reduce((n, r) => n + r.bundles.length, 0), done = Object.keys(s.bundles.done).filter((k) => !k.includes(':') && k !== 'all').length;
+    let html = `<p class="hint">The village pantry: give goods from storage to fill bundles and earn rewards. Fill a whole shelf for a lasting bonus. Seasonal crops only grow in their season, so save some for these. <b>${done} / ${total}</b> bundles done.</p>`;
+    for (const r of BUNDLE_ROOMS) {
+      const rd = E.bundleDone(s, `room:${r.id}`), n = r.bundles.filter((b) => s.bundles.done[b.id]).length;
+      html += `<h3>${img(r.icon)} ${r.name} <small class="shelf">${n}/${r.bundles.length}</small></h3>
+        <p class="hint shelfperk ${rd ? 'on' : ''}">${rd ? `${img('check')} ${r.perkText}` : `Fill the shelf: ${r.perkText.toLowerCase()} + ${this.rewardHTML(r.reward)}`}</p>`;
+      for (const b of r.bundles) {
+        const st = E.bundleState(w, b.id);
+        const tag = b.season ? `<span class="stag ${b.season === sea.id ? 'on' : ''}">${img(b.season)} ${SEASONS.find((x) => x.id === b.season).name} crops</span>` : '';
+        if (!st.open) { html += `<div class="order bundle locked"><div class="of">${esc(b.name)} ${tag}</div><span class="lock">${img('lock')} Opens at Lv ${b.level}</span></div>`; continue; }
+        const slots = st.slots.map((x) => `<button class="need ${x.left ? '' : 'ok'}" data-act="givebundle" data-id="${b.id}" data-item="${x.item}" ${st.done || !x.left || !x.have ? 'disabled' : ''} title="You have ${fmt(x.have)}">${itemImg(x.item)}<b>${x.got}/${x.need}</b> ${ITEMS[x.item].name}${x.left && !st.done ? `<small>· have ${fmt(x.have)}</small>` : ''}</button>`).join('');
+        html += `<div class="order bundle ${st.done ? 'done' : st.ready ? 'ready' : ''}"><div class="of">${esc(b.name)} ${tag}</div><div class="oi">${slots}</div>
+          <div class="row"><span>${st.done ? `${img('check')} Done` : `Reward ${this.rewardHTML(b.reward)}`}</span>${st.done ? '' : `<button class="btn small green" data-act="givebundle" data-id="${b.id}" ${st.canGive ? '' : 'disabled'}>Give all I can</button>`}</div></div>`;
+      }
+    }
+    html += `<p class="hint">Finish every bundle: ${this.rewardHTML(ALL_BUNDLES_REWARD)}</p>`;
+    return html;
   }
 
   sheet_upgrades() {
@@ -1102,6 +1134,10 @@ export class UI {
     else if (e.t === 'wlevel') this.toast(`${e.w.name} reached level ${e.w.lvl}!`, 'good');
     else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast('Storage is full! Sell goods, turn on auto-sell or upgrade the barn.', 'bad'); } }
     else if (e.t === 'fired') { this.toast(`${e.w.name} said goodbye to the farm`); }
+    else if (e.t === 'bundle') {
+      if (!e.done.length) this.toast(`Gave ${e.n} to the ${E.bundleLabel(e.id)}`);
+      for (const k of e.done) this.toast(k === 'all' ? 'Every bundle complete! The Golden Scarecrow is yours' : k.startsWith('room:') ? `${E.bundleLabel(k)} complete! ${BUNDLE_ROOMS.find((r) => `room:${r.id}` === k).perkText}` : `${E.bundleLabel(k)} complete!`, 'good');
+    }
     else if (e.t === 'hired') { this.toast(`${e.w.name} joined the farm as a ${ROLES[e.w.role].name.toLowerCase()}!`, 'good'); }
     else if (e.t === 'land') { const [sx, sy] = R.toScreen((e.px + 0.5) * MAP.parcel * TILE, (e.py + 0.5) * MAP.parcel * TILE); R.burst(sx, sy); }
   }

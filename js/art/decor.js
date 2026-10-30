@@ -318,6 +318,53 @@ const DECOR = {
     for (let x = 0; x < 16; x++) { const y = 4 - Math.round(Math.sin((x / 15) * Math.PI) * 4); P.r(x, y + 2, 1, 3, [C.red, C.yellow, C.blue, C.pink][(x >> 2) % 4]); }
     for (const y of [10, 16, 22]) { P.px(0, y, C.red); P.px(15, y + 2, C.blue); }
   }],
+  // bundle rewards
+  veggiecart: [32, 22, (P) => {
+    P.r(2, 8, 26, 8, C.wood); P.hl(2, 8, 26, C.woodL); P.hl(2, 15, 26, C.woodDD); for (let x = 6; x < 28; x += 6) P.vl(x, 9, 6, C.woodD);
+    P.line(28, 10, 31, 6, C.woodD); P.oval(4, 14, 8, 8, C.woodDD); P.oval(5, 15, 6, 6, C.woodL); P.px(7, 17, C.woodDD); P.px(8, 18, C.woodDD);
+    P.oval(18, 14, 8, 8, C.woodDD); P.oval(19, 15, 6, 6, C.woodL); P.px(21, 17, C.woodDD); P.px(22, 18, C.woodDD);
+    P.oval(3, 3, 7, 6, '#9fd27a'); P.oval(4, 4, 5, 4, '#c4e8a0');
+    P.r(11, 4, 3, 5, C.orange); P.r(14, 3, 3, 6, C.orange); P.px(12, 2, C.leaf); P.px(15, 1, C.leaf); P.px(15, 2, C.leafD);
+    P.oval(18, 3, 6, 6, C.red); P.px(20, 2, C.leaf); P.oval(23, 4, 5, 5, '#9a5ac8'); P.px(25, 3, C.leaf);
+  }],
+  prizepumpkin: [16, 18, (P) => {
+    P.oval(0, 4, 16, 13, C.orangeD); P.oval(1, 4, 14, 12, C.orange);
+    for (const x of [4, 8, 11]) P.vl(x, 6, 9, C.orangeD); P.px(3, 6, '#ffb060'); P.px(4, 7, '#ffb060');
+    P.r(7, 1, 2, 4, C.leafD); P.px(9, 2, C.leaf); P.px(10, 3, C.leaf);
+    P.r(9, 10, 6, 6, C.blue); P.r(10, 11, 4, 4, C.gold); P.px(11, 16, C.blue); P.px(13, 16, C.blue);
+  }],
+  jamshelf: [16, 26, (P) => {
+    P.r(0, 0, 16, 26, C.woodD); P.r(1, 1, 14, 24, C.wood);
+    for (const y of [8, 16, 24]) P.r(0, y, 16, 2, C.woodDD);
+    const jar = (x, y, c) => { P.r(x, y + 1, 4, 5, c); P.px(x + 1, y + 2, '#ffffffaa'); P.r(x, y, 4, 2, C.cream); P.hl(x, y, 4, '#d84a4a'); };
+    jar(2, 2, '#d8344a'); jar(7, 2, '#5a4ac0'); jar(11, 2, '#b01a3a');
+    jar(2, 10, '#f08a24'); jar(7, 10, '#d8344a'); jar(11, 10, '#e8b030');
+    jar(3, 18, '#7a3aa0'); jar(9, 18, '#d8344a');
+  }],
+  milkcans: [16, 20, (P) => {
+    const can = (x, y, h) => { P.r(x, y + 3, 6, h, C.stoneD); P.r(x + 1, y + 3, 4, h, C.stoneL); P.r(x + 1, y, 4, 3, C.stone); P.r(x + 2, y - 1, 2, 1, C.stoneDD); P.hl(x, y + 3 + (h >> 1), 6, C.stoneDD); };
+    can(1, 4, 13); can(9, 7, 10);
+    P.r(9, 17, 6, 3, C.wood); P.hl(9, 17, 6, C.woodL);
+  }],
+  rowboat: [32, 14, (P) => {
+    P.r(4, 2, 24, 6, C.woodD); P.r(2, 4, 28, 4, C.woodD); P.r(5, 3, 22, 4, C.wood); P.hl(3, 4, 26, C.woodL);
+    P.r(6, 8, 20, 3, C.woodDD); P.r(9, 11, 14, 2, C.woodDD);
+    for (const x of [11, 20]) P.r(x, 3, 2, 4, C.woodL);
+    P.line(6, 0, 26, 12, C.woodL); P.r(24, 11, 4, 3, C.woodD); P.hl(2, 13, 28, C.waterL);
+  }],
+  meadowbell: [16, 34, (P) => {
+    P.r(2, 4, 2, 30, C.woodD); P.r(12, 4, 2, 30, C.woodD); P.r(0, 2, 16, 3, C.roofRD); P.r(1, 0, 14, 3, C.roofR); P.hl(1, 0, 14, C.roofRL);
+    P.oval(4, 7, 8, 9, C.goldD); P.oval(5, 7, 6, 8, C.gold); P.hl(4, 15, 8, C.goldD); P.px(6, 9, C.goldL); P.r(7, 16, 2, 2, C.goldD);
+    for (const [y, c] of [[22, C.pink], [24, C.yellow], [26, C.red], [28, '#9a6ad0']]) { P.px(1, y, c); P.px(14, y + 1, c); }
+    P.vl(8, 17, 6, C.cream);
+  }],
+  goldscarecrow: [16, 28, (P) => {
+    P.vl(7, 7, 21, C.goldD); P.hl(1, 12, 14, C.goldD);
+    P.r(4, 11, 8, 9, C.gold); P.r(4, 16, 8, 2, C.goldD); P.r(1, 11, 3, 3, C.gold); P.r(12, 11, 3, 3, C.gold);
+    P.px(0, 13, C.goldL); P.px(15, 13, C.goldL); P.r(5, 20, 6, 2, C.goldL); P.px(6, 13, C.goldL); P.px(9, 15, C.goldL);
+    P.oval(4, 4, 8, 7, C.goldL); P.px(6, 7, C.goldD); P.px(9, 7, C.goldD); P.hl(6, 9, 4, C.goldD);
+    P.r(2, 3, 12, 2, C.goldD); P.r(4, 0, 8, 4, C.gold); P.hl(4, 3, 8, C.red);
+  }],
 };
 
 export function decorSprite(type, season = 'summer') {

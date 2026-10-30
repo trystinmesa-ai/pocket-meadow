@@ -255,3 +255,14 @@ body.placing #goal { display: none; }
 .recipe b { font-size: 12.5px; margin-left: 4px; }
 .wc .job { font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #fff4da; border: 1.5px solid var(--paper3); }
 .tile > .ib { align-self: center; }
+
+/* bundles */
+.order.bundle.done { background: #eefad8; opacity: 0.85; }
+.order.bundle.locked { opacity: 0.6; }
+.order.bundle .need { cursor: pointer; font: inherit; font-size: 13px; color: inherit; }
+.order.bundle .need:disabled { cursor: default; color: inherit; }
+.order.bundle .need small { color: var(--ink2); }
+.order.bundle .row { margin-top: 6px; }
+.shelf { color: var(--ink2); font-weight: 400; }
+.shelfperk.on { color: var(--greenD); font-weight: 700; }
+.thumb.xs { width: 18px; height: 18px; object-fit: contain; image-rendering: pixelated; }

@@ -1,6 +1,6 @@
 // Game state: creating a new farm, indexes for fast lookups, inventory,
 // placement rules and the derived effects of upgrades.
-import { MAP, DEFS, ITEMS, CROPS, START_PARCELS, SAVE_VERSION, UPGRADES, CHARM_BONUS_PER, CHARM_BONUS_MAX,
+import { BUNDLE_ROOMS, MAP, DEFS, ITEMS, CROPS, START_PARCELS, SAVE_VERSION, UPGRADES, CHARM_BONUS_PER, CHARM_BONUS_MAX,
   BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES } from './data.js';
 
 export const PW = MAP.w / MAP.parcel;
@@ -60,7 +60,7 @@ export function newGame(now = Date.now()) {
     objects: [], piles: [], workers: [], inv: {}, autoSell: {},
     seeds: { wheat: true, carrot: true },
     upgrades: {}, orders: [], nextOrderAt: now + 90 * 1000,
-    goal: 0, ach: {}, hats: {}, pets: [], ribbons: 0, fest: null,
+    goal: 0, ach: {}, hats: {}, pets: [], ribbons: 0, fest: null, bundles: { give: {}, done: {} },
     stats: { earned: 0, soldCoins: 0, harvest: {}, craft: {}, sold: {}, orders: 0, play: 0 },
     settings: { grid: false, helpers: true, motion: true },
     nextId: 1,
@@ -96,6 +96,7 @@ export function initObject(o) {
 export function migrate(s) {
   s.stats ||= {}; s.stats.harvest ||= {}; s.stats.craft ||= {}; s.stats.sold ||= {};
   s.ach ||= {}; s.hats ||= {}; s.pets ||= []; s.ribbons ||= 0; s.fest ||= null;
+  s.bundles ||= {}; s.bundles.give ||= {}; s.bundles.done ||= {};
   s.stats.earned ||= 0; s.stats.soldCoins ||= 0; s.stats.orders ||= 0; s.stats.play ||= 0;
   s.settings = { grid: false, helpers: true, motion: true, ...(s.settings || {}) };
   s.piles ||= []; s.orders ||= []; s.autoSell ||= {}; s.upgrades ||= {}; s.seeds ||= { wheat: true, carrot: true };
@@ -244,15 +245,18 @@ export const ulvl = (s, id) => s.upgrades[id] || 0;
 
 export function effects(s, w) {
   const u = (id) => ulvl(s, id);
+  // finished bundle shelves add small lasting bonuses
+  const perk = { grow: 0, craft: 0, animal: 0, sell: 0 };
+  for (const r of BUNDLE_ROOMS) if (s.bundles?.done[`room:${r.id}`]) for (const k in r.perk) perk[k] += r.perk[k];
   return {
-    grow: 1 + 0.1 * u('grow'),
+    grow: 1 + 0.1 * u('grow') + perk.grow,
     walk: 1 + 0.08 * u('boots'),
     carry: 3 + u('basket'),
     work: 1 + 0.1 * u('tools'),
     water: 1.4 + 0.1 * u('water'),
-    sell: (1 + 0.05 * u('haggle')) * (1 + (w ? w.charmBonus() : 0)),
-    animal: 1 + 0.12 * u('animal'),
-    craft: 1 + 0.1 * u('craft'),
+    sell: (1 + 0.05 * u('haggle') + perk.sell) * (1 + (w ? w.charmBonus() : 0)),
+    animal: 1 + 0.12 * u('animal') + perk.animal,
+    craft: 1 + 0.1 * u('craft') + perk.craft,
     bumper: 0.08 * u('bumper'),
     offlineH: 8 + 2 * u('night'),
   };

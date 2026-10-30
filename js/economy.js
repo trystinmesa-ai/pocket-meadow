@@ -1,10 +1,10 @@
 // Money in and money out: selling, auto-sell, purchases, upgrades, land,
 // hiring and orders. UI code calls these; each returns '' on success or a reason.
 import { ACHIEVEMENTS, achReward, HATS, DEFS, ITEMS, CROPS, UPGRADES, upgradeCost, hireCost, xpForLevel, levelReward, MAX_LEVEL, parcelCost, parcelLevel, MAP } from './data.js';
-import { PW, PH, newWorker, initObject, sellPrice, storeCap } from './world.js';
+import { PW, PH, newWorker, initObject, sellPrice, storeCap, effects } from './world.js';
 import { cancelJobsFor, endJob, dropPile } from './sim.js';
 import { seasonAt, festivalOn } from './seasons.js';
-import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS } from './data.js';
+import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS, BUNDLE_ROOMS, BUNDLES, ALL_BUNDLES_REWARD } from './data.js';
 
 /** Add earned coins (offline earnings wait in pendingCoins to be collected). */
 export function earn(world, coins, xp = coins) {
@@ -306,6 +306,7 @@ export function hatUnlocked(s, id) {
   const h = HATS[id];
   if (!h) return true;
   if (s.hats[id]) return true;
+  if (h.bundle) return bundleDone(s, h.bundle);
   if (h.ach) { const [aid, tier] = h.ach.split(':'); return (s.ach[aid] || 0) > +tier; }
   return false;
 }
@@ -323,10 +324,64 @@ export function buyHat(world, id) {
   return '';
 }
 
+// ---------- bundles ----------
+// key: a bundle id, 'room:<shelf id>' or 'all'
+export const bundleDone = (s, key) => !!s.bundles?.done[key];
+export function bundleLabel(key) {
+  if (key === 'all') return 'whole pantry';
+  if (key.startsWith('room:')) return BUNDLE_ROOMS.find((r) => r.id === key.slice(5)).name;
+  return `${BUNDLES[key].name} bundle`;
+}
+/** What's been given and what's still needed. */
+export function bundleState(world, id) {
+  const s = world.state, b = BUNDLES[id], given = s.bundles.give[id] || {};
+  const slots = Object.entries(b.items).map(([item, need]) => {
+    const got = Math.min(need, given[item] || 0);
+    return { item, need, got, left: need - got, have: world.have(item) };
+  });
+  const done = bundleDone(s, id), open = s.level >= b.level;
+  return { b, slots, done, open, canGive: open && !done && slots.some((x) => x.left && x.have), ready: open && !done && slots.every((x) => x.have >= x.left) };
+}
+/** Bundles that could be finished right now with what's in storage. */
+export const bundlesReady = (world) => Object.keys(BUNDLES).filter((id) => bundleState(world, id).ready).length;
+
+function grant(world, r) {
+  const s = world.state;
+  if (r.coins) { s.coins += r.coins; s.stats.earned += r.coins; }
+  if (r.ribbons) s.ribbons += r.ribbons;
+  if (r.hat) s.hats[r.hat] = true;
+}
+/** Give goods from storage to a bundle (one item, or everything it can). */
+export function giveBundle(world, id, only) {
+  const s = world.state, st = bundleState(world, id);
+  if (!st.open) return `Opens at farm level ${st.b.level}`;
+  if (st.done) return 'Already complete';
+  const given = (s.bundles.give[id] ||= {});
+  let n = 0;
+  for (const x of st.slots) {
+    if (only && x.item !== only) continue;
+    const q = world.takeItem(x.item, Math.min(x.left, x.have));
+    given[x.item] = (given[x.item] || 0) + q;
+    n += q;
+  }
+  if (!n) return 'Nothing in storage to give';
+  const ev = { t: 'bundle', id, n, done: [] };
+  if (Object.entries(st.b.items).every(([k, q]) => (given[k] || 0) >= q)) {
+    s.bundles.done[id] = true; grant(world, st.b.reward); ev.done.push(id);
+    const room = BUNDLE_ROOMS.find((r) => r.id === st.b.room);
+    if (room.bundles.every((b) => s.bundles.done[b.id])) { s.bundles.done[`room:${room.id}`] = true; grant(world, room.reward); ev.done.push(`room:${room.id}`); }
+    if (BUNDLE_ROOMS.every((r) => s.bundles.done[`room:${r.id}`]) && !s.bundles.done.all) { s.bundles.done.all = true; grant(world, ALL_BUNDLES_REWARD); ev.done.push('all'); }
+    world.fx = effects(s, world);
+  }
+  world.events.push(ev);
+  return '';
+}
+
 // ---------- seasons & festivals ----------
 /** Why a seasonal or festival item can't be bought right now ('' if it can). */
 export function seasonalBlock(world, d, now = Date.now()) {
   const season = seasonAt(now);
+  if (d.bundle && !bundleDone(world.state, d.bundle)) return `Reward from the ${bundleLabel(d.bundle)}`;
   if (d.season && d.season !== season.id) return `Only sold in ${SEASONS.find((x) => x.id === d.season).name}`;
   if (d.festival) {
     if (!festivalOn(now)) return 'Only sold during a festival weekend';

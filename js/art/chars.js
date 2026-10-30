@@ -26,6 +26,9 @@ const FANCY = {
   sunhat(P, dir, y) { P.r(3, y - 1, 6, 3, '#f6e7a8'); P.hl(3, y + 1, 6, '#5fb3c8'); P.hl(0, y + 2, 12, '#f6e7a8'); P.hl(1, y + 3, 10, '#d8c078'); P.px(8, y, C.pink); },
   acornhat(P, dir, y) { P.rr(2, y - 1, 8, 4, '#8a5a32'); for (let x = 3; x < 9; x += 2) P.px(x, y, '#6a3f22'); P.r(5, y - 3, 2, 2, '#5a3a20'); },
   earmuffs(P, dir, y) { P.hl(3, y, 6, '#6a6478'); P.r(1, y + 2, 3, 4, '#e8606a'); P.r(8, y + 2, 3, 4, '#e8606a'); P.px(1, y + 2, '#ff9aa0'); },
+  sproutcap(P, dir, y) { P.r(3, y, 6, 4, '#6aae5a'); P.hl(3, y + 3, 6, '#4a8a3a'); P.vl(6, y - 3, 3, '#4a8a3a'); P.r(3, y - 4, 3, 2, '#8cd070'); P.r(7, y - 4, 3, 2, '#8cd070'); },
+  knitcap(P, dir, y) { P.r(3, y, 6, 4, '#e8a030'); for (let x = 3; x < 9; x += 2) P.px(x, y + 1, '#f4d080'); P.hl(3, y + 3, 6, '#b07018'); P.r(5, y - 2, 2, 2, C.white); },
+  wreath(P, dir, y) { P.hl(2, y + 2, 8, C.leafD); P.hl(3, y + 1, 6, C.leaf); for (const [x, c] of [[2, C.pink], [4, C.yellow], [7, C.orange], [9, '#a8e0ff']]) P.px(x, y + 1, c); },
   crown(P, dir, y) { P.r(3, y, 6, 3, C.gold); P.px(3, y - 1, C.gold); P.px(5, y - 1, C.gold); P.px(6, y - 1, C.gold); P.px(8, y - 1, C.gold); P.px(5, y + 1, C.red); P.hl(3, y + 2, 6, C.goldD); },
 };
 

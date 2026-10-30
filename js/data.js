@@ -459,6 +459,14 @@ export const DEFS = {
   jackolantern:{ name: 'Lantern Pumpkins', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, ribbons: 20, festival: 'autumn', charm: 25, light: 1 },
   lanterntree: { name: 'Lantern Tree', cat: 'decor', w: 2, h: 2, level: 1, cost: 0, ribbons: 40, festival: 'winter', charm: 45, light: 1, tall: true },
   ribbonarch:  { name: 'Ribbon Arch', cat: 'decor', w: 1, h: 1, walk: true, level: 1, cost: 0, ribbons: 15, festival: 'any', charm: 18 },
+  // bundle rewards: free to place once the bundle (or shelf) is finished, one each
+  veggiecart:  { name: 'Veggie Cart', cat: 'decor', w: 2, h: 1, level: 1, cost: 0, unique: true, bundle: 'greens', charm: 30 },
+  prizepumpkin:{ name: 'Prize Pumpkin', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'giant', charm: 35 },
+  jamshelf:    { name: 'Jam Shelf', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'jams', charm: 30 },
+  milkcans:    { name: 'Milk Churns', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'dairy', charm: 30 },
+  rowboat:     { name: 'Little Rowboat', cat: 'decor', w: 2, h: 1, level: 1, cost: 0, unique: true, bundle: 'catch', charm: 35 },
+  meadowbell:  { name: 'Meadow Bell', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'room:seasons', charm: 60, tall: true },
+  goldscarecrow:{ name: 'Golden Scarecrow', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'all', charm: 120, light: 1 },
 };
 
 for (const [id, d] of Object.entries(DEFS)) {
@@ -534,6 +542,9 @@ export const HATS = {
   sunhat:      { name: 'Sun Hat', ribbons: 12, festival: 'summer' },
   acornhat:    { name: 'Acorn Cap', ribbons: 12, festival: 'autumn' },
   earmuffs:    { name: 'Earmuffs', ribbons: 12, festival: 'winter' },
+  sproutcap:   { name: 'Sprout Cap', bundle: 'berries' },
+  knitcap:     { name: 'Knitted Cap', bundle: 'woolhoney' },
+  wreath:      { name: 'Four Seasons Wreath', bundle: 'room:seasons' },
 };
 
 // ---------- Seasons & festivals ----------
@@ -549,6 +560,43 @@ export const SEASONS = [
 export const SEASON_BONUS = 1.25, WINTER_SLOW = 0.85;
 export const FESTIVAL_ORDER_EVERY = 40 * 60; // seconds between festival orders
 export const FESTIVAL_SLOTS = 3;
+
+// ---------- Bundles ----------
+// The village pantry: give goods from storage to fill a bundle and get its
+// reward. Filling every bundle on a shelf gives a lasting bonus. Seasonal
+// bundles need crops that only grow in their own season, so stock up.
+// reward: { coins, ribbons, decor, hat }; perk: added to the farm's effects.
+export const BUNDLE_ROOMS = [
+  { id: 'fields', name: 'Field Shelf', icon: 'sprout', perk: { grow: 0.05 }, perkText: 'Crops grow 5% faster', reward: { coins: 1500 }, bundles: [
+    { id: 'starter', name: 'Starter Crops', level: 3, items: { wheat: 20, carrot: 15, corn: 10 }, reward: { coins: 300 } },
+    { id: 'berries', name: 'Berry Patch', level: 8, items: { strawberry: 12, blueberry: 12, raspberry: 10 }, reward: { hat: 'sproutcap' } },
+    { id: 'greens', name: 'Garden Greens', level: 10, items: { cabbage: 10, onion: 10, cucumber: 8, bellpepper: 6 }, reward: { decor: 'veggiecart' } },
+    { id: 'giant', name: 'Giant Harvest', level: 12, items: { pumpkin: 5, watermelon: 4, sunflower: 8 }, reward: { decor: 'prizepumpkin' } },
+  ] },
+  { id: 'kitchen', name: 'Kitchen Shelf', icon: 'basket', perk: { craft: 0.05 }, perkText: 'Workshops work 5% faster', reward: { coins: 4000 }, bundles: [
+    { id: 'bakery', name: 'Baker’s Basket', level: 8, items: { bread: 5, cornbread: 3, applepie: 2 }, reward: { coins: 1200, ribbons: 5 } },
+    { id: 'jams', name: 'Jam Jars', level: 7, items: { strawjam: 3, bluejam: 3, cherryjam: 2 }, reward: { decor: 'jamshelf' } },
+    { id: 'pickles', name: 'Pickle Crock', level: 8, items: { pickles: 2, sauerkraut: 2, pickledon: 2 }, reward: { coins: 2500 } },
+    { id: 'sweets', name: 'Sweet Tooth', level: 9, items: { candy: 3, toffee: 2, honeydrops: 2 }, reward: { coins: 2000, ribbons: 5 } },
+  ] },
+  { id: 'barn', name: 'Barnyard Shelf', icon: 'egg', perk: { animal: 0.05 }, perkText: 'Animals produce 5% faster', reward: { coins: 3000 }, bundles: [
+    { id: 'coop', name: 'Coop Collection', level: 3, items: { egg: 20, wheat: 20 }, reward: { coins: 400 } },
+    { id: 'dairy', name: 'Dairy Pail', level: 7, items: { milk: 10, butter: 3, cheese: 2 }, reward: { decor: 'milkcans' } },
+    { id: 'woolhoney', name: 'Wool & Honey', level: 11, items: { wool: 6, honey: 8, yarn: 2 }, reward: { hat: 'knitcap' } },
+  ] },
+  { id: 'river', name: 'Riverside Shelf', icon: 'drop', perk: { sell: 0.03 }, perkText: 'Everything sells for 3% more', reward: { coins: 3000 }, bundles: [
+    { id: 'catch', name: 'Fisher’s Catch', level: 11, items: { fish: 15, smokedfish: 4 }, reward: { decor: 'rowboat' } },
+    { id: 'supper', name: 'River Supper', level: 15, items: { fishstew: 2, friedrice: 2, smokedcheese: 1 }, reward: { coins: 3000, ribbons: 8 } },
+  ] },
+  { id: 'seasons', name: 'Four Seasons Shelf', icon: 'spring', perk: { grow: 0.05 }, perkText: 'Crops grow another 5% faster', reward: { decor: 'meadowbell', hat: 'wreath', ribbons: 20 }, bundles: [
+    { id: 'spring', name: 'Spring Basket', level: 6, season: 'spring', items: { asparagus: 15, aspsoup: 2, strawberry: 10 }, reward: { ribbons: 10 } },
+    { id: 'summer', name: 'Summer Basket', level: 6, season: 'summer', items: { sunberry: 15, sunjuice: 2, corn: 15 }, reward: { ribbons: 10 } },
+    { id: 'autumn', name: 'Autumn Basket', level: 7, season: 'autumn', items: { cranberry: 15, cransauce: 2, potato: 10 }, reward: { ribbons: 10 } },
+    { id: 'winter', name: 'Winter Basket', level: 9, season: 'winter', items: { frostmint: 15, mintcandy: 2, cabbage: 10 }, reward: { ribbons: 10 } },
+  ] },
+];
+export const BUNDLES = Object.fromEntries(BUNDLE_ROOMS.flatMap((r) => r.bundles.map((b) => [b.id, { ...b, room: r.id }])));
+export const ALL_BUNDLES_REWARD = { decor: 'goldscarecrow', coins: 25000 };
 
 // ---------- Pets ----------
 export const PETS = {

@@ -447,6 +447,37 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(bakery.inp.flour > 0 || bakery.out.potatobread > 0, 'Flour goes straight from the mill to the bakery', `after ${t}s`);
 }
 
+// 24. bundles
+{
+  const D = await import('../js/data.js');
+  const w = empty(), s = w.state;
+  rich(w, 20, 1000);
+  ok(E.giveBundle(w, 'starter') === 'Nothing in storage to give', 'An empty barn has nothing to give');
+  w.addItem('wheat', 25); w.addItem('carrot', 5);
+  E.giveBundle(w, 'starter');
+  ok(s.bundles.give.starter.wheat === 20 && w.have('wheat') === 5 && s.bundles.give.starter.carrot === 5, 'Giving takes only what the bundle still needs');
+  w.addItem('carrot', 10); w.addItem('corn', 10);
+  const c0 = s.coins;
+  E.giveBundle(w, 'starter', 'carrot');
+  ok(!E.bundleDone(s, 'starter') && !w.have('carrot') && w.have('corn') === 10, 'Giving one item leaves the rest in storage');
+  E.giveBundle(w, 'starter');
+  ok(E.bundleDone(s, 'starter') && s.coins === c0 + D.BUNDLES.starter.reward.coins, 'A full bundle pays its reward', `+${s.coins - c0}`);
+  ok(E.giveBundle(w, 'starter') === 'Already complete', 'A finished bundle takes nothing more');
+  ok(E.seasonalBlock(w, DEFS.veggiecart) !== '' && !E.hatUnlocked(s, 'sproutcap'), 'Reward decorations and hats stay locked until earned');
+  const g0 = w.fx.grow;
+  for (const b of D.BUNDLE_ROOMS[0].bundles) { if (E.bundleDone(s, b.id)) continue; for (const [k, q] of Object.entries(b.items)) w.addItem(k, q); E.giveBundle(w, b.id); }
+  ok(E.bundleDone(s, 'room:fields') && Math.abs(w.fx.grow - g0 - 0.05) < 1e-9, 'Filling a shelf gives its lasting bonus', `${g0} -> ${w.fx.grow}`);
+  ok(E.seasonalBlock(w, DEFS.veggiecart) === '' && E.hatUnlocked(s, 'sproutcap') && E.place(w, 'veggiecart', 30, 30) !== 'Not enough coins', 'Rewards unlock once earned');
+  const w2 = empty(); w2.state.level = 1;
+  ok(E.giveBundle(w2, 'supper').startsWith('Opens at'), 'Bundles open with farm level');
+  const missing = Object.values(D.BUNDLES).flatMap((b) => Object.keys(b.items)).filter((k) => !ITEMS[k]);
+  ok(!missing.length, 'Every bundle asks for real items', missing.join(','));
+  const sea = D.BUNDLE_ROOMS.find((r) => r.id === 'seasons').bundles;
+  ok(sea.every((b) => Object.keys(b.items).some((k) => CROPS[k] && CROPS[k].season === b.season)), 'Each seasonal bundle needs a crop from its own season');
+  const m = migrate(JSON.parse(JSON.stringify({ ...s, bundles: undefined })));
+  ok(m.bundles && m.bundles.done && m.bundles.give, 'Old saves get an empty pantry');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>
