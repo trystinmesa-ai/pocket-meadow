@@ -47,7 +47,7 @@ class Game {
     await this.catchUpTo(Date.now(), !fresh);
     this.ui.tick();
     if (fresh && !Cloud.user()) this.ui.modal(`<div class="welcome"><h2>Welcome to Pocket Meadow!</h2>
-      <p>This little patch of land is yours. Pip the farmer and Bea the hauler are already at work.</p>
+      <p>This little patch of land is yours, with 100 coins to get started. Hire a farmer in <b>Farmhands</b>, then lay a few wheat plots from <b>Build</b>. Wheat seeds are free.</p>
       <p>Follow the goals at the top, sell your harvest at the market stall, and grow your farm. It keeps working while you’re away.</p>
       <p class="hint">Have an account? Open Menu to sign in and load your farm.</p></div>`, [['Let’s farm!', 'ok', 'green']]);
     requestAnimationFrame((t) => this.loop(t));

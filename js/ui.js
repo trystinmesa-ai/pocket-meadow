@@ -1,6 +1,6 @@
 // Interface: top bar, dock, sheets (build, farmhands, market, orders,
 // upgrades, menu), the selection card, placement modes, toasts and dialogs.
-import { ACHIEVEMENTS, achReward, HATS, discovered, DEFS, ITEMS, CROPS, CROP_ORDER, ROLES, ROLE_ORDER, UPGRADES, upgradeCost, xpForLevel, GOALS, BUILD_TABS,
+import { ACHIEVEMENTS, achReward, HATS, discovered, DEFS, ITEMS, CROPS, USES, SOURCES, CROP_ORDER, ROLES, ROLE_ORDER, UPGRADES, upgradeCost, xpForLevel, GOALS, BUILD_TABS,
   MAX_WORKER_LEVEL, workerXpNeeded, MAP, TILE, parcelCost, parcelLevel, levelReward, MAX_LEVEL } from './data.js';
 import { doorTile, sellPrice, storeCap, cropUnlocked, PW } from './world.js';
 import * as E from './economy.js';
@@ -67,6 +67,26 @@ function sourceOf(item) {
   }
   return 'Keep farming!';
 }
+/** A tappable item icon that opens its info card. */
+const infoImg = (k, cls) => `<button class="ib" data-act="iteminfo" data-item="${k}" title="${esc(ITEMS[k].name)}">${itemImg(k, cls)}</button>`;
+/** One short line of what an item is used for. */
+function usesHTML(item, max = 7) {
+  const u = USES[item] || [];
+  if (!u.length) return '';
+  const outs = [...new Set(u.filter((x) => x.out).map((x) => x.out))];
+  const extra = [...new Set(u.filter((x) => x.feeds).map((x) => `feeds ${x.feeds}s`))];
+  if (u.some((x) => x.bees)) extra.push('helps bees');
+  return `<div class="uses"><span>Used for</span>${outs.slice(0, max).map((k) => infoImg(k)).join('')}${outs.length > max ? `<small>+${outs.length - max}</small>` : ''}${extra.length ? `<small>${extra.join(' · ')}</small>` : ''}</div>`;
+}
+// Who works each kind of thing, for the tip on its card.
+const WORK = {
+  field: [['farmer'], 'Farmers plant, water and harvest it.'],
+  tree: [['farmer', 'rancher'], 'Farmers or ranchers pick the fruit.'],
+  craft: [['artisan'], 'An artisan runs it. Haulers help bring ingredients.'],
+  animal: [['rancher'], 'A rancher feeds the animals and collects what they make.'],
+  hive: [['rancher'], 'Makes it on its own. A rancher collects it.'],
+  storage: [[], 'Farmhands drop goods off here. Haulers also move any piles into it.'],
+};
 
 export class UI {
   constructor(game) {
@@ -143,9 +163,10 @@ export class UI {
       case 'upgradeb': if (fail(E.upgradeBuilding(w, this.sel))) { this.toast(`${DEFS[this.sel.type].name} upgraded to level ${this.sel.lvl}!`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'recipe': this.sel.recipe = d.value; curRecipe(w, this.sel); this.g.dirty(); this.renderCard(); break;
       case 'setcrop': if (fail(E.setCrop(w, this.sel, d.crop))) { this.g.dirty(); this.renderCard(); } break;
-      case 'cropfield': this.cropField(this.sel, this.sel.crop); break;
+      case 'cropfield': this.cropField(this.sel, this.sel.next || this.sel.crop); break;
       case 'buyseedcard': if (fail(E.buySeed(w, d.crop))) { E.setCrop(w, this.sel, d.crop); this.g.dirty(); this.renderCard(); } break;
-      case 'role': { const wk = s.workers.find((x) => x.id === +d.id); if (wk) { E.setRole(w, wk, d.value); this.g.dirty(); this.sheet === 'workers' ? this.renderSheet() : this.renderCard(); } break; }
+      case 'fire': { const wk = s.workers.find((x) => x.id === +d.id); if (wk) this.askFire(wk); break; }
+      case 'iteminfo': this.itemInfo(d.item); break;
       case 'open': this.openSheet(d.v); break;
       // farmhands
       case 'hirerole': this.hireRole = d.v; this.renderSheet(); break;
@@ -293,7 +314,7 @@ export class UI {
     const t = BUILD_TABS.find((x) => x.id === tab);
     let html = '';
     if (tab === 'field') {
-      html += `<p class="hint">Pick a crop, then tap or drag on your land to lay field plots. Farmers do the rest.</p><div class="grid">`;
+      html += `<p class="hint">Pick a crop, then tap or drag on your land to lay field plots. Farmers do the rest, paying for seeds each time they plant. Tap a crop picture to see what it is for.</p><div class="grid">`;
       for (const c of CROP_ORDER) {
         const cr = CROPS[c], it = ITEMS[c];
         const lockLvl = s.level < cr.level, owned = !!s.seeds[c];
@@ -304,8 +325,8 @@ export class UI {
         if (lockLvl) btn = `<span class="lock">${img('lock')} Lv ${cr.level}</span>`;
         else if (!owned) btn = `<button class="btn small" data-act="seed" data-crop="${c}" data-need="${cr.cost}">Unlock ${coin(cr.cost)}</button>`;
         else btn = `<button class="btn small green" data-act="pick" data-type="plot" data-crop="${c}">Plant ${coin(cost)}</button>`;
-        html += `<div class="tile ${lockLvl ? 'locked' : ''}"><img class="thumb" src="${thumb('plot', c)}" alt=""><div class="tn">${it.name}</div>
-          <div class="tm">${img('clock')}${fmtTime(cr.time)} · ${cr.yield}× ${coin(it.value)}${cr.regrow ? ' · regrows' : ''}</div>${tag}${btn}</div>`;
+        html += `<div class="tile ${lockLvl ? 'locked' : ''}"><button class="ib" data-act="iteminfo" data-item="${c}"><img class="thumb" src="${thumb('plot', c)}" alt=""></button><div class="tn">${it.name}</div>
+          <div class="tm">${img('clock')}${fmtTime(cr.time)} · ${cr.yield}× ${coin(it.value)}${cr.regrow ? ' · regrows' : ''}</div><div class="tm">Seeds ${cr.seed ? coin(cr.seed) : 'free'} each planting</div>${tag}${btn}</div>`;
       }
       html += '</div><h3>Fruit trees</h3><div class="grid">';
       for (const type of Object.keys(DEFS).filter((k) => DEFS[k].cat === 'tree')) html += this.buildTile(type);
@@ -355,7 +376,7 @@ export class UI {
         <div class="wi"><div class="wn"><button class="link" data-act="rename" data-id="${wk.id}">${esc(wk.name)}</button> <span class="lv">Lv ${wk.lvl}</span></div>
         <div class="bar thin"><i data-live="xp${wk.id}" style="width:${wk.lvl >= MAX_WORKER_LEVEL ? 100 : (wk.xp / need) * 100}%"></i></div>
         <div class="wa" data-live="act${wk.id}">${esc(this.activity(wk))}</div></div>
-        <div class="wc">${this.hatSelect(wk)}<select data-chg="role" data-id="${wk.id}">${ROLE_ORDER.map((r) => `<option value="${r}" ${wk.role === r ? 'selected' : ''}>${ROLES[r].name}</option>`).join('')}</select>
+        <div class="wc"><span class="job">${ROLES[wk.role].name}</span>${this.hatSelect(wk)}
         <button class="btn small" data-act="find" data-id="${wk.id}">${img('eye')} Find</button></div></div>`;
     }
     html += '</div><h3>' + img('hat') + ' Hat rack</h3><p class="hint">Earn hats from achievements in the Journal, or buy a few here. Tap a farmhand to dress them up.</p><div class="list">';
@@ -365,7 +386,7 @@ export class UI {
         ${have ? '<span class="max">OWNED</span>' : h.cost ? `<button class="btn small" data-act="buyhat" data-id="${id}" data-need="${h.cost}">${coin(h.cost)}</button>` : h.ribbons && !E.seasonalBlock(this.w, h) ? `<button class="btn small" data-act="buyhat" data-id="${id}" ${s.ribbons < h.ribbons ? 'disabled' : ''}>${ribbon(h.ribbons)}</button>` : `<span class="lock">${img('lock')}</span>`}</div>`;
     }
     html += '</div>' + this.petsSection();
-    html += '<p class="hint">Farmhands level up as they work: each level makes them 5% quicker at tasks and 4% faster on their feet.</p>';
+    html += '<p class="hint">Farmhands keep the job they were hired for. To change jobs, let someone go from their card (you get half the cost back) and hire someone new. Farmhands level up as they work: each level makes them 5% quicker at tasks and 4% faster on their feet.</p>';
     return { title: `${img('people', 'pi big')} Farmhands`, html };
   }
   petsSection() {
@@ -435,7 +456,7 @@ export class UI {
     html += '<div class="list">';
     for (const k of items) {
       const auto = s.autoSell[k];
-      html += `<div class="irow">${itemImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="q${k}">${fmt(w.have(k))}</b> · ${coin(sellPrice(w, k))} each</div></div>
+      html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="q${k}">${fmt(w.have(k))}</b> · ${coin(sellPrice(w, k))} each</div></div>
         <div class="ib"><button class="btn small" data-act="sell" data-item="${k}" data-n="1">Sell 1</button><button class="btn small gold" data-act="sell" data-item="${k}" data-n="all">All</button></div>
         <div class="ia"><label class="check"><input type="checkbox" data-chg="auto" data-item="${k}" ${auto !== undefined ? 'checked' : ''}> Auto-sell</label>
         ${auto !== undefined ? `<span class="keep">keep <button class="btn tiny" data-act="reserve" data-item="${k}" data-n="-5">−</button><b>${auto}</b><button class="btn tiny" data-act="reserve" data-item="${k}" data-n="5">+</button></span>` : ''}</div></div>`;
@@ -668,10 +689,10 @@ export class UI {
       sub: ROLES[wk.role].name,
       body: `<div class="wa" data-live="act">${esc(this.activity(wk))}</div>
         <div class="bar thin"><i data-live="xpbar" style="width:${wk.lvl >= MAX_WORKER_LEVEL ? 100 : (wk.xp / need) * 100}%"></i></div>
-        <div class="row"><span>Job</span><select data-chg="role" data-id="${wk.id}">${ROLE_ORDER.map((r) => `<option value="${r}" ${wk.role === r ? 'selected' : ''}>${ROLES[r].name}</option>`).join('')}</select></div>
+        <div class="row"><span>Job</span><b>${ROLES[wk.role].name}</b></div>
         <div class="row"><span>Hat</span>${this.hatSelect(wk)}</div>
         <p class="hint">${esc(ROLES[wk.role].desc)}</p>`,
-      btns: `<button class="btn small" data-act="rename" data-id="${wk.id}">Rename</button>`,
+      btns: `<button class="btn small" data-act="rename" data-id="${wk.id}">Rename</button><button class="btn small" data-act="fire" data-id="${wk.id}">Let go</button>`,
       live: () => ({ act: esc(this.activity(wk)) }),
     };
   }
@@ -687,23 +708,30 @@ export class UI {
     if (o.type === 'plot') {
       const cr = CROPS[o.crop];
       const status = () => {
-        if (o.st === 'empty') return !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again` : 'Waiting for a farmer to plant';
-        if (o.st === 'ripe') return '✨ Ripe! A farmer will harvest it soon';
-        const rate = w.fx.grow * (o.wet ? w.fx.water : 1);
-        return `Growing ${Math.floor(o.p * 100)}% · ${fmtTime(((1 - o.p) * cr.time) / rate)} left${o.wet ? ' · watered' : ''}`;
+        let t;
+        if (o.st === 'empty') t = !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again`
+          : !E.canAffordSeeds(w, o.crop) ? `Needs ${fmt(cr.seed)} coins for seeds` : 'Waiting for a farmer to plant';
+        else if (o.st === 'ripe') t = '✨ Ripe! A farmer will harvest it soon';
+        else t = `Growing ${Math.floor(o.p * 100)}% · ${fmtTime(((1 - o.p) * cr.time) / (w.fx.grow * (o.wet ? w.fx.water : 1)))} left${o.wet ? ' · watered' : ''}`;
+        return o.next ? `${t}<small class="next">Then ${itemImg(o.next)} ${ITEMS[o.next].name}, planted after this harvest</small>` : t;
       };
       const crops = CROP_ORDER.filter((c) => s.level >= CROPS[c].level).map((c) => s.seeds[c]
-        ? `<button class="chip ${o.crop === c ? 'on' : ''}" data-act="setcrop" data-crop="${c}" title="${ITEMS[c].name}">${itemImg(c)}</button>`
-        : `<button class="chip lockchip" data-act="buyseedcard" data-crop="${c}" data-need="${CROPS[c].cost}" title="Unlock ${ITEMS[c].name}">${itemImg(c)}<small>${fmtShort(CROPS[c].cost)}</small></button>`).join('');
-      return { ...base, title: `${ITEMS[o.crop].name} field`, sub: `${cr.yield}× per harvest · sells ${fmt(sellPrice(w, o.crop))} each`,
+        ? `<button class="chip ${o.crop === c ? 'on' : ''} ${o.next === c ? 'queued' : ''}" data-act="setcrop" data-crop="${c}" title="${ITEMS[c].name} · seeds ${CROPS[c].seed}">${itemImg(c)}<small>${CROPS[c].seed ? fmtShort(CROPS[c].seed) : 'free'}</small></button>`
+        : `<button class="chip lockchip" data-act="buyseedcard" data-crop="${c}" data-need="${CROPS[c].cost}" title="Unlock ${ITEMS[c].name}">${itemImg(c)}<small>${img('lock')}${fmtShort(CROPS[c].cost)}</small></button>`).join('');
+      return { ...base, title: `${ITEMS[o.crop].name} field`, sub: `${cr.yield}× per harvest · sells ${fmt(sellPrice(w, o.crop))} each · seeds ${cr.seed ? fmt(cr.seed) : 'free'}`,
         body: `<div data-live="st" class="status">${status()}</div><div class="bar" data-live="pb"><i style="width:${o.p * 100}%"></i></div>
-          <div class="chips">${crops}</div>`,
-        btns: `<button class="btn small" data-act="cropfield">Plant whole field</button>` + moveBtn + rmBtn,
+          ${usesHTML(o.crop)}
+          <div class="chips">${crops}</div>
+          <p class="hint">Tap a crop to grow it here. Anything already planted finishes and gets harvested first. Numbers are the seed price per planting.</p>
+          ${this.workTip('field')}`,
+        btns: `<button class="btn small" data-act="iteminfo" data-item="${o.crop}">${img('book')} About ${ITEMS[o.crop].name}</button><button class="btn small" data-act="cropfield">Plant whole field</button>` + moveBtn + rmBtn,
         live: () => ({ st: status(), pb: `<i style="width:${o.p * 100}%"></i>` }) };
     }
     if (d.cat === 'tree') {
       const status = () => (o.p >= 1 ? `✨ Ready to pick (${d.yield} ${ITEMS[d.fruit].name.toLowerCase()}s)` : `Fruit in ${fmtTime(((1 - o.p) * d.time) / w.fx.grow)}`);
-      return { ...base, sub: `Fruits every ${fmtTime(d.time)}`, body: `<div class="status" data-live="st">${status()}</div>`, live: () => ({ st: status() }) };
+      return { ...base, sub: `Fruits every ${fmtTime(d.time)} · ${d.yield} ${ITEMS[d.fruit].name.toLowerCase()} worth ${fmt(sellPrice(w, d.fruit))} each`,
+        body: `<div class="status" data-live="st">${status()}</div><p class="hint">${esc(d.desc)}</p>${usesHTML(d.fruit)}${this.workTip('tree')}`,
+        btns: `<button class="btn small" data-act="iteminfo" data-item="${d.fruit}">${img('book')} About ${ITEMS[d.fruit].name}</button>` + moveBtn + rmBtn, live: () => ({ st: status() }) };
     }
     if (d.recipes) {
       const list = recipesFor(s, o);
@@ -725,7 +753,7 @@ export class UI {
       };
       const v = info();
       const opts = `<option value="auto" ${o.recipe === 'auto' ? 'selected' : ''}>Auto (best available)</option>` + list.map((r) => `<option value="${r.out}" ${o.recipe === r.out ? 'selected' : ''}>${ITEMS[r.out].name}</option>`).join('');
-      const recipes = list.map((r) => `<div class="recipe ${curRecipe(w, o) === r ? 'on' : ''}">${Object.entries(r.in).map(([k, q]) => `<span>${itemImg(k)}${q}</span>`).join('<i>+</i>')}<i>→</i><span>${itemImg(r.out)}</span>
+      const recipes = list.map((r) => `<div class="recipe ${curRecipe(w, o) === r ? 'on' : ''}">${Object.entries(r.in).map(([k, q]) => `<span>${infoImg(k)}${q}</span>`).join('<i>+</i>')}<i>→</i><span>${infoImg(r.out)}</span>
         <small>${fmtTime(craftTime(w, o, r))} · ${coin(sellPrice(w, r.out))}</small></div>`).join('');
       const locked = DEFS[o.type].recipes.filter((r) => !list.includes(r)).map((r) => `<div class="recipe locked">${itemImg(r.out)} ${ITEMS[r.out].name} <small>${img('lock')} Lv ${r.level}</small></div>`).join('');
       return { ...base, sub: d.desc,
@@ -733,7 +761,7 @@ export class UI {
           <div class="row"><span>Make</span><select data-chg="recipe">${opts}</select></div>
           <div class="io"><span>In: <b data-live="inp">${v.inp}</b></span><span>Out: <b data-live="out">${v.out}</b></span></div>
           <div class="recipes">${recipes}${locked}</div>
-          ${w.state.workers.some((x) => x.role === 'artisan') ? '' : '<p class="hint">Tip: hire an Artisan to keep workshops running nonstop.</p>'}`,
+          <p class="hint">Tap any item to see what it is for.</p>${this.workTip('craft')}`,
         live: info };
     }
     if (d.animal) {
@@ -743,23 +771,25 @@ export class UI {
       const v = info();
       return { ...base, sub: `${animalCount(o)} ${A.kind}s · 1 ${ITEMS[A.item].name.toLowerCase()} each ${fmtTime(A.time / (animalCount(o) * w.fx.animal))}`,
         body: `<div class="status" data-live="st">${v.st}</div><div class="io"><span>Feed: <b data-live="feed">${v.feed}</b></span><span>Ready: <b data-live="out">${v.out}</b></span></div>
-        <p class="hint">${esc(d.desc)} Upgrading adds an animal.</p>`, live: info };
+        <p class="hint">${esc(d.desc)} Upgrading adds an animal.</p>${usesHTML(A.item)}${this.workTip('animal')}`, live: info };
     }
     if (d.hive) {
       const it = d.hive.item;
       const info = () => ({ out: `${itemImg(it)} ${o.out}/${hiveCap(o)}` });
       const near = o.type === 'beehive' ? `${o._flowers || 0} flowers nearby · ` : '';
       return { ...base, sub: `${near}1 ${ITEMS[it].name.toLowerCase()} every ${fmtTime(d.hive.time / (hiveRate(o) * w.fx.animal))}`,
-        body: `<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>`, live: info };
+        body: `<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>${usesHTML(it)}${this.workTip('hive')}`, live: info };
     }
     if (d.store) {
-      return { ...base, sub: `Holds ${storeCap(o)} items`, body: `<div class="io"><span>${img('box')} Farm storage: <b data-live="u">${fmt(w.used())}/${fmt(w.capacity)}</b></span></div><p class="hint">${esc(d.desc)}</p>`,
+      return { ...base, sub: `Holds ${storeCap(o)} items`, body: `<div class="io"><span>${img('box')} Farm storage: <b data-live="u">${fmt(w.used())}/${fmt(w.capacity)}</b></span></div><p class="hint">${esc(d.desc)}</p>${this.workTip('storage')}`,
         btns: upBtn + `<button class="btn small" data-act="open" data-v="market">Open market</button>` + moveBtn + rmBtn, live: () => ({ u: `${fmt(w.used())}/${fmt(w.capacity)}` }) };
     }
     if (d.houses) return { ...base, sub: `Home for ${d.houses} farmhands`, body: `<p class="hint">${s.workers.length}/${w.housing} beds in use across your farm.</p>`, btns: `<button class="btn small" data-act="open" data-v="workers">Farmhands</button>` + moveBtn + rmBtn };
     if (o.type === 'market') return { ...base, sub: d.desc, btns: `<button class="btn small gold" data-act="open" data-v="market">Open market</button>` + moveBtn };
     if (o.type === 'board') return { ...base, sub: d.desc, btns: `<button class="btn small gold" data-act="open" data-v="orders">See orders</button>` + moveBtn };
-    return { ...base, sub: d.desc || (d.charm ? `+${d.charm} charm` : ''), body: d.speed ? `<p class="hint">Farmhands walk ${Math.round((d.speed - 1) * 100)}% faster here.</p>` : '' };
+    const extra = [d.speed && `Farmhands walk ${Math.round((d.speed - 1) * 100)}% faster here.`, d.charm && `Adds ${d.charm} charm. Charm makes everything sell for a little more.`,
+      d.radius && 'Works on its own, no farmhand needed.', d.light && 'Glows at night.', o.type === 'well' && 'Farmers walk here to fill their watering cans, so place it near your fields.'].filter(Boolean);
+    return { ...base, sub: d.desc || (d.charm ? 'Decoration' : ''), body: extra.length ? `<p class="hint">${extra.join(' ')}</p>` : '' };
   }
 
   cropField(plot, crop) {
@@ -770,14 +800,57 @@ export class UI {
       const p = stack.pop();
       if (seen.has(p.id)) continue;
       seen.add(p.id);
-      if (p.crop !== crop) { E.setCrop(w, p, crop); n++; }
+      if (p.crop === crop ? p.next : p.next !== crop) { E.setCrop(w, p, crop); n++; }
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const q = w.objAt(p.x + dx, p.y + dy);
         if (q && q.type === 'plot' && !seen.has(q.id)) stack.push(q);
       }
     }
-    this.toast(n ? `${n} plots switched to ${ITEMS[crop].name}` : 'The whole field already grows this', n ? 'good' : '');
+    const later = [...seen].some((id) => w.byId.get(id)?.next === crop);
+    this.toast(!n ? 'The whole field already grows this' : later ? `${n} plots will switch to ${ITEMS[crop].name} after their harvest` : `${n} plots switched to ${ITEMS[crop].name}`, n ? 'good' : '');
     this.g.dirty();
+  }
+
+  /** Who works this, with a nudge when you have nobody for it yet. */
+  workTip(kind) {
+    const [roles, text] = WORK[kind];
+    if (!roles.length || this.s.workers.some((x) => roles.includes(x.role))) return `<p class="tip">${img('people')} ${text}</p>`;
+    const who = roles.map((r) => `${/^[aeiou]/i.test(ROLES[r].name) ? 'an' : 'a'} ${ROLES[r].name}`).join(' or ');
+    return `<p class="tip warn">${img('people')} ${text} Hire ${who} in Farmhands to get it going.</p>`;
+  }
+
+  /** A short card about an item: price, where it comes from, what it makes. */
+  itemInfo(k) {
+    const it = ITEMS[k], cr = CROPS[k], w = this.w, s = this.s;
+    if (!it) return;
+    const facts = [`Sells for ${coin(sellPrice(w, k))}`, w.have(k) ? `You have ${fmt(w.have(k))}` : ''];
+    if (cr) facts.push(`${img('clock')} ${fmtTime(cr.time)} to grow`, `${cr.yield} per harvest`, `Seeds ${cr.seed ? coin(cr.seed) : 'free'}`,
+      cr.regrow ? 'Regrows after picking' : '', cr.season ? `${SEASONS.find((x) => x.id === cr.season).name} only` : '');
+    const from = [...new Set((SOURCES[k] || []).map((t) => (t === 'plot' ? 'Field plots' : DEFS[t].name)))];
+    const rows = (USES[k] || []).map((u) => {
+      const at = DEFS[u.at], lvl = Math.max(at.level, u.r?.level || 0), lock = s.level < lvl ? ` ${img('lock')} Lv ${lvl}` : '';
+      if (u.out) return `<div class="recipe">${Object.entries(u.r.in).map(([i, q]) => `<span>${infoImg(i)}${q}</span>`).join('<i>+</i>')}<i>→</i><span>${infoImg(u.out)}</span><b>${ITEMS[u.out].name}</b><small>${at.name}${lock}</small></div>`;
+      if (u.feeds) return `<div class="recipe">Feeds the ${u.feeds}s<small>${at.name}${lock}</small></div>`;
+      return `<div class="recipe">Bees nearby make honey faster<small>${at.name}${lock}</small></div>`;
+    }).join('');
+    const html = `<h2>${itemImg(k, 'pi big')} ${it.name}</h2><div class="facts">${facts.filter(Boolean).map((f) => `<span>${f}</span>`).join('')}</div>
+      ${from.length ? `<p class="hint">Comes from: ${from.join(', ')}</p>` : ''}
+      ${rows ? `<h3>Used for</h3><div class="recipes">${rows}</div>` : '<p class="hint">Not used to make anything. Sell it or use it for orders.</p>'}`;
+    const m = { html, buttons: [['Close', 'ok']], info: true };
+    // tapping an item inside an open info card swaps to that item
+    if (this.modalOpen?.info) { this.modalQ.unshift(m); this.nextModal(); } else { this.modalQ.push(m); if (!this.modalOpen) this.nextModal(); }
+  }
+
+  askFire(wk) {
+    const refund = E.fireRefund(this.w);
+    this.modal(`<h2>Let ${esc(wk.name)} go?</h2><p>${esc(wk.name)} leaves the farm and you get back ${coin(refund)}. Their level ${wk.lvl} goes with them: a new farmhand starts at level 1.</p>`,
+      [['Keep them', 'no'], ['Let go', 'yes', 'red']], (v) => {
+        if (v !== 'yes') return;
+        E.fire(this.w, wk);
+        if (this.sel === wk) this.select(null);
+        this.g.dirty();
+        if (this.sheet === 'workers') this.renderSheet();
+      });
   }
 
   askRemove(o) {
@@ -1005,6 +1078,7 @@ export class UI {
     else if (e.t === 'level') this.levelUp(e.level, e.reward);
     else if (e.t === 'wlevel') this.toast(`${e.w.name} reached level ${e.w.lvl}!`, 'good');
     else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast('Storage is full! Sell goods, turn on auto-sell or upgrade the barn.', 'bad'); } }
+    else if (e.t === 'fired') { this.toast(`${e.w.name} said goodbye to the farm`); }
     else if (e.t === 'hired') { this.toast(`${e.w.name} joined the farm as a ${ROLES[e.w.role].name.toLowerCase()}!`, 'good'); }
     else if (e.t === 'land') { const [sx, sy] = R.toScreen((e.px + 0.5) * MAP.parcel * TILE, (e.py + 0.5) * MAP.parcel * TILE); R.burst(sx, sy); }
   }

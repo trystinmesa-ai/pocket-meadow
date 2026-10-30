@@ -55,7 +55,7 @@ export function newGame(now = Date.now()) {
   for (const [px, py] of START_PARCELS) owned[py * PW + px] = true;
   const s = {
     v: SAVE_VERSION, rev: 0, savedAt: now, simTime: now, created: now, seed,
-    coins: 80, pendingCoins: 0, xp: 0, level: 1,
+    coins: 100, pendingCoins: 0, xp: 0, level: 1,
     map: { owned },
     objects: [], piles: [], workers: [], inv: {}, autoSell: {},
     seeds: { wheat: true, carrot: true },
@@ -74,14 +74,9 @@ export function newGame(now = Date.now()) {
   for (let x = 18; x <= 30; x++) add('path_dirt', x, 19);
   add('path_dirt', 23, 18);
   add('path_dirt', 27, 18);
-  for (const [x, y] of [[19, 21], [20, 21], [21, 21], [19, 22], [20, 22], [21, 22]]) add('plot', x, y, { crop: 'wheat' });
   add('flowers_red', 16, 19); add('flowers_yellow', 16, 20); add('oak', 31, 22); add('bush', 25, 23); add('fence_wood', 26, 21);
   add('fence_wood', 27, 21); add('fence_wood', 28, 21); add('haybale', 29, 22);
-  s.inv = { wheat: 4 };
-  newWorker(s, 'farmer', 'Pip');
-  newWorker(s, 'hauler', 'Bea');
-  s.workers[0].x = 20.5; s.workers[0].y = 20.5;
-  s.workers[1].x = 23.5; s.workers[1].y = 19.5;
+  // no farmhands or fields yet: the player hires and plants their own
   return s;
 }
 

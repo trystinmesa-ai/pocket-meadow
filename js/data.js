@@ -22,7 +22,7 @@ export const ITEMS = {
   hops:       { name: 'Hops', value: 16, icon: { k: 'hops' } },
   cotton:     { name: 'Cotton', value: 22, icon: { k: 'cotton' } },
   grapes:     { name: 'Grapes', value: 20, icon: { k: 'grapes' } },
-  lavender:   { name: 'Lavender', value: 30, icon: { k: 'lavender' } },
+  lavender:   { name: 'Lavender', value: 36, icon: { k: 'lavender' } },
   pumpkin:    { name: 'Pumpkin', value: 60, icon: { k: 'pumpkin' } },
   // tree fruit
   apple:      { name: 'Apple', value: 8, icon: { k: 'round', c: '#d63a3a', c2: '#ff7b6b', leaf: true } },
@@ -71,10 +71,10 @@ export const ITEMS = {
   raspberry:  { name: 'Raspberry', value: 11, icon: { k: 'berries', c: '#d9345a', c2: '#ff8aa8' } },
   bellpepper: { name: 'Bell Pepper', value: 18, icon: { k: 'pepper' } },
   watermelon: { name: 'Watermelon', value: 75, icon: { k: 'melon', c: '#3f8a3a', s: '#2a6a2a' } },
-  honeydew:   { name: 'Honeydew', value: 65, icon: { k: 'melon', c: '#cfe39a', s: '#a8c070' } },
-  rice:       { name: 'Rice', value: 14, icon: { k: 'sack', c: '#f4efe0', m: '#d8cfb0' } },
-  tealeaf:    { name: 'Tea Leaves', value: 26, icon: { k: 'tealeaf' } },
-  coffeebean: { name: 'Coffee Beans', value: 32, icon: { k: 'coffeebean' } },
+  honeydew:   { name: 'Honeydew', value: 85, icon: { k: 'melon', c: '#cfe39a', s: '#a8c070' } },
+  rice:       { name: 'Rice', value: 24, icon: { k: 'sack', c: '#f4efe0', m: '#d8cfb0' } },
+  tealeaf:    { name: 'Tea Leaves', value: 40, icon: { k: 'tealeaf' } },
+  coffeebean: { name: 'Coffee Beans', value: 50, icon: { k: 'coffeebean' } },
   plum:       { name: 'Plum', value: 14, icon: { k: 'round', c: '#7a3f9a', c2: '#a874c8', leaf: true } },
   peach:      { name: 'Peach', value: 18, icon: { k: 'round', c: '#f4a070', c2: '#ffd0a8', leaf: true } },
   sap:        { name: 'Maple Sap', value: 20, icon: { k: 'bucket' } },
@@ -98,10 +98,10 @@ export const ITEMS = {
   syrup:      { name: 'Maple Syrup', value: 95, icon: { k: 'bottle', c: '#b8641e' } },
   maplecandy: { name: 'Maple Candy', value: 170, icon: { k: 'candy', c: '#d8902e', leafy: true } },
   honeydrops: { name: 'Honey Drops', value: 95, icon: { k: 'candy', c: '#f4c030' } },
-  tea:        { name: 'Cup of Tea', value: 80, icon: { k: 'cup', c: '#9ab040' } },
-  coffee:     { name: 'Coffee', value: 100, icon: { k: 'cup', c: '#5a3420' } },
-  latte:      { name: 'Latte', value: 210, icon: { k: 'cup', c: '#d8b088', foam: true } },
-  chai:       { name: 'Honey Chai', value: 160, icon: { k: 'cup', c: '#c08a50', foam: true } },
+  tea:        { name: 'Cup of Tea', value: 110, icon: { k: 'cup', c: '#9ab040' } },
+  coffee:     { name: 'Coffee', value: 135, icon: { k: 'cup', c: '#5a3420' } },
+  latte:      { name: 'Latte', value: 240, icon: { k: 'cup', c: '#d8b088', foam: true } },
+  chai:       { name: 'Honey Chai', value: 185, icon: { k: 'cup', c: '#c08a50', foam: true } },
   smokedfish: { name: 'Smoked Fish', value: 70, icon: { k: 'fish', smoked: true } },
   smokedcheese:{ name: 'Smoked Cheese', value: 130, icon: { k: 'cheese', smoked: true } },
   pancakes:   { name: 'Pancakes', value: 260, icon: { k: 'pancakes' } },
@@ -117,7 +117,7 @@ export const ITEMS = {
   peachjuice: { name: 'Peach Nectar', value: 85, icon: { k: 'bottle', c: '#f4a070' } },
   plumwine:   { name: 'Plum Wine', value: 110, icon: { k: 'wine', c: '#5a2a6a' } },
   peachwine:  { name: 'Peach Wine', value: 130, icon: { k: 'wine', c: '#e8905a' } },
-  ricewine:   { name: 'Rice Wine', value: 90, icon: { k: 'wine', c: '#e8e0c8' } },
+  ricewine:   { name: 'Rice Wine', value: 130, icon: { k: 'wine', c: '#e8e0c8' } },
   raswine:    { name: 'Raspberry Wine', value: 95, icon: { k: 'wine', c: '#b01a40' } },
   stout:      { name: 'Oat Stout', value: 95, icon: { k: 'mug', c: '#3a2418' } },
   yogurt:     { name: 'Berry Yogurt', value: 95, icon: { k: 'bowl', c: '#f4c8d8' } },
@@ -133,40 +133,41 @@ export const ITEMS = {
 };
 
 // ---------- Crops (planted on field plots) ----------
-// time = seconds to grow, yield = items per harvest, regrow = progress a
-// regrowing crop restarts from after harvest, cost = coins to unlock the seed.
+// yield = items per harvest, regrow = progress a regrowing crop restarts from
+// after harvest, cost = coins to unlock the seed. Seed price per planting
+// (seed) and grow time (time) are worked out from these further down.
 export const CROPS = {
-  wheat:      { time: 40,  yield: 2, level: 1,  cost: 0 },
-  carrot:     { time: 90,  yield: 2, level: 1,  cost: 0 },
-  strawberry: { time: 120, yield: 2, level: 2,  cost: 80,    regrow: 0.42 },
-  corn:       { time: 150, yield: 2, level: 3,  cost: 200 },
-  blueberry:  { time: 180, yield: 3, level: 4,  cost: 400,   regrow: 0.4 },
-  sugarcane:  { time: 180, yield: 3, level: 5,  cost: 600 },
-  potato:     { time: 200, yield: 3, level: 5,  cost: 700 },
-  tomato:     { time: 240, yield: 3, level: 6,  cost: 1200,  regrow: 0.38 },
-  sunflower:  { time: 300, yield: 2, level: 7,  cost: 2000 },
-  pumpkin:    { time: 480, yield: 1, level: 8,  cost: 3500 },
-  hops:       { time: 360, yield: 3, level: 9,  cost: 5000,  regrow: 0.4 },
-  grapes:     { time: 420, yield: 3, level: 10, cost: 8000,  regrow: 0.38 },
-  cotton:     { time: 400, yield: 3, level: 11, cost: 12000 },
-  lavender:   { time: 400, yield: 2, level: 12, cost: 18000 },
-  oats:       { time: 120, yield: 3, level: 3,  cost: 250 },
-  cabbage:    { time: 210, yield: 2, level: 4,  cost: 450 },
-  onion:      { time: 160, yield: 3, level: 5,  cost: 650 },
-  beans:      { time: 200, yield: 3, level: 6,  cost: 1000,  regrow: 0.42 },
-  cucumber:   { time: 210, yield: 3, level: 7,  cost: 1800,  regrow: 0.4 },
-  raspberry:  { time: 190, yield: 3, level: 8,  cost: 3000,  regrow: 0.42 },
-  bellpepper: { time: 300, yield: 3, level: 10, cost: 7000,  regrow: 0.4 },
-  watermelon: { time: 520, yield: 1, level: 12, cost: 15000 },
-  honeydew:   { time: 480, yield: 1, level: 13, cost: 20000 },
-  rice:       { time: 260, yield: 4, level: 15, cost: 30000 },
-  tealeaf:    { time: 360, yield: 2, level: 17, cost: 50000,  regrow: 0.45 },
-  coffeebean: { time: 420, yield: 2, level: 20, cost: 90000,  regrow: 0.45 },
+  wheat:      { yield: 2, level: 1,  cost: 0 },
+  carrot:     { yield: 2, level: 1,  cost: 0 },
+  strawberry: { yield: 2, level: 2,  cost: 80,    regrow: 0.42 },
+  corn:       { yield: 2, level: 3,  cost: 200 },
+  blueberry:  { yield: 3, level: 4,  cost: 400,   regrow: 0.4 },
+  sugarcane:  { yield: 3, level: 5,  cost: 600 },
+  potato:     { yield: 3, level: 5,  cost: 700 },
+  tomato:     { yield: 3, level: 6,  cost: 1200,  regrow: 0.38 },
+  sunflower:  { yield: 2, level: 7,  cost: 2000 },
+  pumpkin:    { yield: 1, level: 8,  cost: 3500 },
+  hops:       { yield: 3, level: 9,  cost: 5000,  regrow: 0.4 },
+  grapes:     { yield: 3, level: 10, cost: 8000,  regrow: 0.38 },
+  cotton:     { yield: 3, level: 11, cost: 12000 },
+  lavender:   { yield: 2, level: 12, cost: 18000 },
+  oats:       { yield: 3, level: 3,  cost: 250 },
+  cabbage:    { yield: 2, level: 4,  cost: 450 },
+  onion:      { yield: 3, level: 5,  cost: 650 },
+  beans:      { yield: 3, level: 6,  cost: 1000,  regrow: 0.42 },
+  cucumber:   { yield: 3, level: 7,  cost: 1800,  regrow: 0.4 },
+  raspberry:  { yield: 3, level: 8,  cost: 3000,  regrow: 0.42 },
+  bellpepper: { yield: 3, level: 10, cost: 7000,  regrow: 0.4 },
+  watermelon: { yield: 1, level: 12, cost: 15000 },
+  honeydew:   { yield: 1, level: 13, cost: 20000 },
+  rice:       { yield: 4, level: 15, cost: 30000 },
+  tealeaf:    { yield: 2, level: 17, cost: 50000,  regrow: 0.45 },
+  coffeebean: { yield: 2, level: 20, cost: 90000,  regrow: 0.45 },
   // seasonal: can only be planted in their season (they finish growing if the season ends)
-  asparagus:  { time: 200, yield: 3, level: 3,  cost: 300,   season: 'spring' },
-  sunberry:   { time: 180, yield: 3, level: 3,  cost: 300,   season: 'summer', regrow: 0.42 },
-  cranberry:  { time: 200, yield: 3, level: 3,  cost: 300,   season: 'autumn', regrow: 0.42 },
-  frostmint:  { time: 220, yield: 3, level: 3,  cost: 300,   season: 'winter' },
+  asparagus:  { yield: 3, level: 3,  cost: 300,   season: 'spring' },
+  sunberry:   { yield: 3, level: 3,  cost: 300,   season: 'summer', regrow: 0.42 },
+  cranberry:  { yield: 3, level: 3,  cost: 300,   season: 'autumn', regrow: 0.42 },
+  frostmint:  { yield: 3, level: 3,  cost: 300,   season: 'winter' },
 };
 export const CROP_ORDER = Object.keys(CROPS);
 // Crops that count as flowers for beehives.
@@ -465,6 +466,39 @@ for (const [id, d] of Object.entries(DEFS)) {
   if (d.walk === undefined) d.walk = false;
 }
 
+// ---------- What each item is for ----------
+// USES[item]: recipes that take it ({ out, at, r }), animals it feeds
+// ({ feeds, at }) and hives it helps ({ bees, at }). SOURCES[item]: the
+// buildings and trees that make it. Info cards read both.
+export const USES = {}, SOURCES = {};
+const addTo = (map, k, v) => (map[k] ||= []).push(v);
+for (const [type, d] of Object.entries(DEFS)) {
+  for (const r of d.recipes || []) { for (const k in r.in) addTo(USES, k, { out: r.out, at: type, r }); addTo(SOURCES, r.out, type); }
+  if (d.animal) { addTo(USES, d.animal.feed, { feeds: d.animal.kind, at: type }); addTo(SOURCES, d.animal.item, type); }
+  if (d.hive) addTo(SOURCES, d.hive.item, type);
+  if (d.fruit) addTo(SOURCES, d.fruit, type);
+}
+for (const c of BEE_FLOWERS) addTo(USES, c, { bees: true, at: 'beehive' });
+for (const c in CROPS) addTo(SOURCES, c, 'plot');
+
+// ---------- Crop balance ----------
+// Everything follows from what one harvest sells for: pricier crops cost more
+// to plant and take longer, while earning a bit more per second. Crops with
+// more uses, regrowing crops and seasonal crops give up some raw-sale profit
+// in exchange for that extra benefit. Wheat seeds stay free so a farm with no
+// coins can always start again.
+export const SEED_SHARE = 0.25;
+for (const [id, c] of Object.entries(CROPS)) {
+  const harvest = ITEMS[id].value * c.yield;
+  const uses = (USES[id] || []).length;
+  c.seed = id === 'wheat' ? 0 : Math.max(1, Math.round(harvest * SEED_SHARE));
+  let rate = (0.1 * Math.pow(harvest / 4, 0.25)) / (1 + 0.06 * Math.max(0, uses - 1)); // coins per second, sold raw
+  if (c.season) rate *= 1.25;
+  // regrowing crops: the first crop takes longer, then it keeps coming back
+  const t = c.regrow ? harvest / ((1 - c.regrow) * rate * 1.1) : (harvest - c.seed) / rate;
+  c.time = Math.max(30, Math.round(t / 5) * 5);
+}
+
 export const BUILD_TABS = [
   { id: 'field', name: 'Fields', cats: ['field', 'tree'] },
   { id: 'build', name: 'Buildings', cats: ['craft', 'animal', 'storage', 'house', 'utility'] },
@@ -536,7 +570,8 @@ export const HAIR = ['#3b2a20', '#6b4226', '#a8642e', '#e0b25a', '#d9733b', '#2a
 export const SHIRTS = ['#d9534f', '#4f8fd9', '#5fb35a', '#e8b23a', '#a66bd1', '#e07ba5', '#43b3a6', '#e8823a', '#f2efe6'];
 export const PANTS = ['#4a5a8a', '#6b4a2b', '#3f6b4a', '#5a4a6b', '#8a6a3b'];
 
-export const hireCost = (n) => Math.round(120 * Math.pow(2.05, Math.max(0, n - 2)));
+// The first two farmhands are cheap so a new farm can get going.
+export const hireCost = (n) => (n < 2 ? [40, 80][n] : Math.round(120 * Math.pow(2.05, n - 2)));
 export const MAX_WORKER_LEVEL = 10;
 export const workerXpNeeded = (lvl) => Math.round(30 * Math.pow(1.7, lvl - 1));
 
@@ -588,12 +623,12 @@ export const RAIN_CHANCE = 0.14;
 // check(s, w) -> number progress toward n.
 const count = (w, type) => w.objects.filter((o) => o.type === type).length;
 export const GOALS = [
-  { text: 'Plant 4 more wheat plots', n: 10, check: (s, w) => w.plots.length, reward: 40 },
+  { text: 'Hire a farmer (Farmhands menu)', n: 1, check: (s) => s.workers.filter((w) => w.role === 'farmer').length, reward: 30 },
+  { text: 'Build 4 wheat field plots', n: 4, check: (s, w) => w.plots.length, reward: 40 },
   { text: 'Harvest 30 wheat', n: 30, check: (s) => s.stats.harvest.wheat || 0, reward: 50 },
   { text: 'Sell goods at the market', n: 1, check: (s) => (s.stats.soldCoins > 0 ? 1 : 0), reward: 30 },
   { text: 'Plant some carrots', n: 4, check: (s, w) => w.plots.filter((p) => p.crop === 'carrot').length, reward: 50 },
-  { text: 'Hire a new farmhand', n: 3, check: (s) => s.workers.length, reward: 80 },
-  { text: 'Reach farm level 2', n: 2, check: (s) => s.level, reward: 60 },
+  { text: 'Hire a hauler to carry harvests', n: 1, check: (s) => s.workers.filter((w) => w.role === 'hauler').length, reward: 60 },
   { text: 'Lay 10 path tiles', n: 10, check: (s, w) => w.objects.filter((o) => o.type.startsWith('path_')).length, reward: 60 },
   { text: 'Fill an order on the notice board', n: 1, check: (s) => s.stats.orders || 0, reward: 100 },
   { text: 'Build a Well', n: 1, check: (s, w) => count(w, 'well'), reward: 80 },

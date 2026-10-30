@@ -7,7 +7,7 @@ import { idx, doorTile, hash2, cropUnlocked } from './world.js';
 import { findPath } from './path.js';
 import { seasonAt, festivalOn, festivalId, seasonGrowth, canPlantNow } from './seasons.js';
 import { FESTIVAL_ORDER_EVERY, FESTIVAL_SLOTS } from './data.js';
-import { earn, autoSellItem, autoSellAll, sellDirect } from './economy.js';
+import { earn, autoSellItem, autoSellAll, sellDirect, canAffordSeeds, paySeeds } from './economy.js';
 
 const R = Math.random;
 const WALK = 2.3; // tiles per second
@@ -260,7 +260,7 @@ function setCarry(w, item, qty) {
   else w.carry = { item, qty };
 }
 
-function dropPile(world, w, x, y) {
+export function dropPile(world, w, x, y) {
   if (!w.carry) return;
   const s = world.state;
   const p = s.piles.find((q) => q.x === x && q.y === y && q.item === w.carry.item);
@@ -327,11 +327,11 @@ const FIND = {
   plant(world, w) {
     if (!world.avail.empty) return null;
     const s = world.state;
-    const p = nearest(world.plots, w, (o) => o.st === 'empty' && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && canPlantNow(o.crop, world.season));
+    const p = nearest(world.plots, w, (o) => o.st === 'empty' && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && canPlantNow(o.crop, world.season) && canAffordSeeds(world, o.crop));
     if (!p) return null;
     const job = new Job(w, 'plant', `Planting ${ITEMS[p.crop].name}`).claim(p, '_c');
     job.go(p.x, p.y, p.id).do('hoe', wDur(world, w, 1.0), () => {
-      if (p.st !== 'empty') return;
+      if (p.st !== 'empty' || !paySeeds(world, p.crop)) return;
       p.st = 'grow'; p.p = 0; p.wet = world.raining || world.sprinkled.has(idx(p.x, p.y));
       addXp(world, w, 1);
     }, 'hoe');
@@ -489,7 +489,8 @@ function harvestSteps(world, w, job, p) {
     const n = c.yield + (R() < world.fx.bumper ? 1 : 0);
     const item = p.crop;
     world.state.stats.harvest[item] = (world.state.stats.harvest[item] || 0) + n;
-    if (c.regrow) { p.st = 'grow'; p.p = c.regrow; } else { p.st = 'empty'; p.p = 0; }
+    if (p.next) { p.crop = p.next; delete p.next; p.st = 'empty'; p.p = 0; world.rebuild(); } // switch crops after this harvest
+    else if (c.regrow) { p.st = 'grow'; p.p = c.regrow; } else { p.st = 'empty'; p.p = 0; }
     p.wet = world.sprinkled.has(idx(p.x, p.y)) || world.raining;
     float(world, p.x, p.y, `+${n}`, item);
     addXp(world, w, 2);

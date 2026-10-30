@@ -2,7 +2,7 @@
 // hiring and orders. UI code calls these; each returns '' on success or a reason.
 import { ACHIEVEMENTS, achReward, HATS, DEFS, ITEMS, CROPS, UPGRADES, upgradeCost, hireCost, xpForLevel, levelReward, MAX_LEVEL, parcelCost, parcelLevel, MAP } from './data.js';
 import { PW, PH, newWorker, initObject, sellPrice, storeCap } from './world.js';
-import { cancelJobsFor, endJob } from './sim.js';
+import { cancelJobsFor, endJob, dropPile } from './sim.js';
 import { seasonAt, festivalOn } from './seasons.js';
 import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS } from './data.js';
 
@@ -93,15 +93,35 @@ export function place(world, type, x, y, extra = {}) {
   return '';
 }
 
-/** Change the crop on a plot. Growing progress is lost; ripe crops are harvested first. */
+/**
+ * Choose a plot's crop. An empty plot switches straight away. A planted one
+ * keeps growing what it has; after that harvest the new crop is planted and
+ * grows from the start. Picking the current crop again cancels the switch.
+ */
 export function setCrop(world, plot, crop) {
-  if (plot.crop === crop) return '';
   if (!world.state.seeds[crop]) return 'Unlock this seed first';
-  cancelJobsFor(world, plot.id);
-  plot.crop = crop;
-  if (plot.st !== 'ripe') { plot.st = 'empty'; plot.p = 0; }
-  world.rebuild();
+  if (plot.st === 'empty') {
+    cancelJobsFor(world, plot.id);
+    plot.crop = crop;
+    delete plot.next;
+    world.rebuild();
+  } else if (crop === plot.crop) delete plot.next;
+  else plot.next = crop;
   return '';
+}
+
+// ---------- seeds per planting ----------
+// Farmers pay for seeds as they plant. Away from the game, earnings wait in
+// pendingCoins, so planting can use those too.
+export const canAffordSeeds = (world, crop) => world.state.coins + world.state.pendingCoins >= CROPS[crop].seed;
+export function paySeeds(world, crop) {
+  const s = world.state, n = CROPS[crop].seed;
+  if (!canAffordSeeds(world, crop)) return false;
+  const fromCoins = Math.min(n, s.coins);
+  s.coins -= fromCoins;
+  s.pendingCoins -= n - fromCoins;
+  s.stats.seeds = (s.stats.seeds || 0) + n;
+  return true;
 }
 
 export function refundOf(world, o) {
@@ -188,9 +208,22 @@ export function hire(world, role) {
   world.events.push({ t: 'hired', w });
   return '';
 }
-export function setRole(world, w, role) {
+/**
+ * Let a farmhand go. Jobs are fixed once hired, so changing jobs means letting
+ * someone go and hiring a new farmhand (who starts at level 1). You get half
+ * of what the last hire cost back.
+ */
+export const fireRefund = (world) => Math.floor(hireCost(Math.max(0, world.state.workers.length - 1)) / 2);
+export function fire(world, w) {
+  const s = world.state;
+  const i = s.workers.indexOf(w);
+  if (i < 0) return '';
   endJob(world, w);
-  w.role = role;
+  if (w.carry) dropPile(world, w, Math.floor(w.x), Math.floor(w.y));
+  s.coins += fireRefund(world);
+  s.workers.splice(i, 1);
+  world.events.push({ t: 'fired', w });
+  return '';
 }
 
 // ---------- land ----------

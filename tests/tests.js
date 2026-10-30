@@ -1,5 +1,5 @@
 // In-browser test suite. Open tests/index.html on the dev server.
-import { World, newGame, migrate, sellPrice, doorTile } from '../js/world.js';
+import { World, newGame, newWorker, migrate, sellPrice, doorTile, initObject } from '../js/world.js';
 import { step, curRecipe, makeOrder } from '../js/sim.js';
 import * as E from '../js/economy.js';
 import { serialize, catchUp } from '../js/save.js';
@@ -10,7 +10,17 @@ const results = [];
 const T0 = Date.UTC(2026, 0, 1, 12);
 function ok(cond, name, info = '') { results.push({ pass: !!cond, name, info }); }
 const run = (w, secs, fast = true, dt = fast ? 1 : 0.05) => { for (let t = 0; t < secs; t += dt) step(w, dt, fast, (w._t = (w._t || T0) + dt * 1000)); };
-const fresh = () => { const s = newGame(T0); s.simTime = T0; const w = new World(s); w.state.nextOrderAt = T0 + 1e12; return w; };
+// New farms start empty; most tests use a little working farm instead:
+// six wheat plots, a farmer and a hauler.
+const empty = () => { const s = newGame(T0); s.simTime = T0; const w = new World(s); w.state.nextOrderAt = T0 + 1e12; return w; };
+const fresh = () => {
+  const w = empty(), s = w.state;
+  for (const [x, y] of [[19, 21], [20, 21], [21, 21], [19, 22], [20, 22], [21, 22]]) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y, crop: 'wheat' }));
+  newWorker(s, 'farmer', 'Pip'); newWorker(s, 'hauler', 'Bea');
+  s.workers[0].x = 20.5; s.workers[0].y = 20.5; s.workers[1].x = 23.5; s.workers[1].y = 19.5;
+  w.rebuild();
+  return w;
+};
 const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.coins = coins; for (const c in CROPS) w.state.seeds[c] = true; w.rebuild(); };
 
 // 1. crop growth rate
@@ -21,8 +31,8 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   for (const x of w.state.workers) x.role = 'hauler';
   w.state.settings.helpers = false;
   const before = w.raining;
-  run(w, 20, true);
-  ok(w.raining || Math.abs(p.p - 0.5) < 0.02 || p.p > 0.5, 'Wheat grows half way in 20s (unwatered)', `p=${p.p.toFixed(3)} rain=${w.raining || before}`);
+  run(w, CROPS.wheat.time / 2, true);
+  ok(w.raining || Math.abs(p.p - 0.5) < 0.02 || p.p > 0.5, 'Wheat grows half way in half its grow time (unwatered)', `p=${p.p.toFixed(3)} rain=${w.raining || before}`);
   p.p = 0.99; run(w, 2, true);
   ok(p.st === 'ripe', 'Crop becomes ripe at 100%');
 }
@@ -315,6 +325,88 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(w.state.stats.pats === 2, 'Pats are counted');
   for (let k = 0; k < 3; k++) E.adoptPet(w, 'dog', 0);
   ok(E.adoptPet(w, 'fox', 0).includes('up to'), 'Pet count is limited');
+}
+
+// 18. a new farm starts empty, with enough coins to get going
+{
+  const w = empty();
+  ok(w.state.workers.length === 0 && w.plots.length === 0 && !w.have('wheat'), 'A new farm has no farmhands, fields or crops');
+  const c = w.state.coins;
+  ok(E.hire(w, 'farmer') === '', 'You can hire your first farmer');
+  let cost = c - w.state.coins, n = 0;
+  for (const [x, y] of [[19, 21], [20, 21], [21, 21], [19, 22]]) if (E.place(w, 'plot', x, y, { crop: 'wheat' }) === '') n++;
+  ok(n === 4 && w.state.coins >= 0, 'Starting coins cover a farmer and four plots', `hire ${cost}, left ${w.state.coins}`);
+  run(w, 300, true);
+  ok((w.state.stats.harvest.wheat || 0) > 0, 'That farmer plants and harvests on their own', `harvested ${w.state.stats.harvest.wheat || 0}`);
+}
+
+// 19. crop balance: pricier crops cost more to plant and take longer
+{
+  const D = await import('../js/data.js');
+  const harvest = (c) => ITEMS[c].value * CROPS[c].yield;
+  const uses = (c) => (D.USES[c] || []).length;
+  const plain = Object.keys(CROPS).filter((c) => !CROPS[c].regrow && !CROPS[c].season);
+  const bad = [];
+  for (const a of plain) for (const b of plain) {
+    // more uses may make a crop slower, never faster
+    if (harvest(a) > harvest(b) && uses(a) >= uses(b) && (CROPS[a].seed < CROPS[b].seed || CROPS[a].time < CROPS[b].time)) bad.push(`${a}>${b}`);
+  }
+  ok(!bad.length, 'A crop that sells for more never has cheaper seeds or a shorter grow time', bad.slice(0, 4).join(' '));
+  ok(CROPS.carrot.seed > CROPS.wheat.seed && CROPS.carrot.time > CROPS.wheat.time && harvest('carrot') > harvest('wheat'), 'Carrots cost more and take longer than wheat, and sell for more');
+  const rate = (c) => (harvest(c) - CROPS[c].seed) / CROPS[c].time;
+  ok(rate('pumpkin') > rate('carrot') && rate('carrot') > rate('wheat') * 0.9, 'Bigger crops still earn a bit more per second', `${rate('wheat').toFixed(3)} ${rate('carrot').toFixed(3)} ${rate('pumpkin').toFixed(3)}`);
+  const sig = Object.keys(CROPS).map((c) => [CROPS[c].seed, CROPS[c].time, harvest(c), CROPS[c].season || '', CROPS[c].regrow || 0].join('/'));
+  ok(new Set(sig).size === sig.length, 'No two crops have the same cost, sale and grow time');
+}
+
+// 20. seeds are paid when planting, and crops can't be swapped once planted
+{
+  const w = fresh();
+  rich(w, 12, 1000);
+  const p = w.plots[0];
+  for (const q of w.plots) if (q !== p) { q.st = 'grow'; q.p = 0; }
+  E.setCrop(w, p, 'pumpkin');
+  ok(p.crop === 'pumpkin' && !p.next, 'An empty plot switches crops straight away');
+  const c0 = w.state.coins;
+  run(w, 20, true);
+  ok(p.st === 'grow' && w.state.coins === c0 - CROPS.pumpkin.seed, 'Farmers pay for seeds when they plant', `paid ${c0 - w.state.coins}`);
+  w.state.coins = 0; w.state.pendingCoins = 0;
+  const q = w.plots[1]; q.st = 'empty'; E.setCrop(w, q, 'pumpkin');
+  run(w, 20, true);
+  ok(q.st === 'empty', 'Nothing gets planted without coins for the seeds');
+  // switching a ripe plot doesn't change what's growing
+  p.st = 'ripe'; p.p = 1;
+  E.setCrop(w, p, 'carrot');
+  ok(p.crop === 'pumpkin' && p.next === 'carrot', 'A planted crop stays; the new one is queued');
+  w.state.coins = 1000;
+  run(w, 30, true);
+  ok((w.state.stats.harvest.pumpkin || 0) >= 1 && p.crop === 'carrot' && !p.next, 'After the harvest the plot switches to the new crop', `${p.crop} ${p.st} ${p.p.toFixed(2)}`);
+  ok(p.st === 'empty' || p.p < 0.5, 'The new crop starts growing from scratch');
+  E.setCrop(w, w.plots[2], 'carrot'); E.setCrop(w, w.plots[2], 'wheat');
+  ok(!w.plots[2].next, 'Picking the current crop again cancels the switch');
+}
+
+// 21. farmhands keep their job; letting one go refunds half
+{
+  const w = fresh();
+  ok(typeof E.setRole !== 'function', 'There is no way to change a farmhand’s job');
+  const wk = w.state.workers[1];
+  wk.carry = { item: 'wheat', qty: 3 };
+  const c0 = w.state.coins, refund = E.fireRefund(w);
+  E.fire(w, wk);
+  ok(w.state.workers.length === 1 && w.state.coins === c0 + refund, 'Letting a farmhand go removes them and refunds coins', `+${refund}`);
+  ok(w.state.piles.some((p) => p.item === 'wheat' && p.qty === 3), 'Whatever they were carrying is left on the ground');
+  ok(refund * 2 === E.nextHireCost(w), 'The refund is half the price of hiring again');
+  w.state.coins = 1e6; E.hire(w, 'artisan');
+  ok(w.state.workers.at(-1).lvl === 1, 'New hires start at level 1');
+}
+
+// 22. every item knows what it is for
+{
+  const D = await import('../js/data.js');
+  ok(D.USES.wheat.some((u) => u.out === 'flour') && D.USES.wheat.some((u) => u.feeds === 'chicken') && D.USES.wheat.some((u) => u.out === 'beer'), 'Wheat lists flour, ale and chicken feed');
+  const missing = Object.keys(ITEMS).filter((k) => !(D.SOURCES[k] || []).length);
+  ok(!missing.length, 'Every item says where it comes from', missing.join(','));
 }
 
 // ---- report ----
