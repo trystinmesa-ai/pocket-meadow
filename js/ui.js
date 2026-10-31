@@ -1015,6 +1015,14 @@ export class UI {
     return [Math.floor(x / TILE), Math.floor(y / TILE)];
   }
 
+  // Paths are painted into the ground, so they have no sprite to hit: fall back to the tile.
+  pickAt(sx, sy) {
+    const hit = this.g.R.pick(sx, sy);
+    if (hit) return hit;
+    const o = this.w.objAt(...this.tileAt(sx, sy));
+    return o && DEFS[o.type].cat === 'path' ? o : null;
+  }
+
   tap(sx, sy) {
     const m = this.mode, w = this.w;
     if (m) {
@@ -1027,7 +1035,7 @@ export class UI {
         return;
       }
       if (m.k === 'remove') {
-        const o = this.g.R.pick(sx, sy);
+        const o = this.pickAt(sx, sy);
         if (o && !o.role) this.askRemove(o);
         return;
       }
@@ -1039,7 +1047,7 @@ export class UI {
         return;
       }
     }
-    const hit = this.g.R.pick(sx, sy);
+    const hit = this.pickAt(sx, sy);
     if (hit && !hit.role && hit.type === 'market') { this.select(null, true); this.openSheet('market'); return; }
     if (hit && !hit.role && hit.type === 'board') { this.select(null, true); this.openSheet('orders'); return; }
     if (this.sheet && !hit) { this.openSheet(null); return; }
