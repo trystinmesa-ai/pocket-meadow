@@ -4,7 +4,7 @@ import { ACHIEVEMENTS, achReward, HATS, discovered, DEFS, ITEMS, CROPS, USES, SO
   MAX_WORKER_LEVEL, workerXpNeeded, MAP, TILE, parcelCost, parcelLevel, levelReward, MAX_LEVEL } from './data.js';
 import { doorTile, sellPrice, storeCap, cropUnlocked, PW } from './world.js';
 import * as E from './economy.js';
-import { curRecipe, recipesFor, outTotal, outCap, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime } from './sim.js';
+import { curRecipe, recipesFor, outTotal, outCap, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime, PANTRY, pantryCap, pantryUsed, pantryItems } from './sim.js';
 import { img, itemImg, iconURL } from './art/icons.js';
 import { itemURL } from './art/items.js';
 import { buildingSprite } from './art/buildings.js';
@@ -82,7 +82,7 @@ function usesHTML(item, max = 7) {
 const WORK = {
   field: [['farmer'], 'Farmers plant, water and harvest it.'],
   tree: [['farmer', 'rancher'], 'Farmers or ranchers pick the fruit.'],
-  craft: [['artisan'], 'An artisan runs it. Haulers help bring ingredients.'],
+  craft: [['artisan'], 'An artisan runs it. Haulers keep its pantry stocked with ingredients, so they don’t fill your barn.'],
   animal: [['rancher'], 'A rancher feeds the animals and collects what they make.'],
   hive: [['rancher'], 'Makes it on its own. A rancher collects it.'],
   storage: [[], 'Farmhands drop goods off here. Haulers also move any piles into it.'],
@@ -160,6 +160,7 @@ export class UI {
       case 'deselect': this.select(null); break;
       case 'move': this.setMode({ k: 'move', obj: this.sel, x: this.sel.x, y: this.sel.y }); this.select(null, true); break;
       case 'remove': this.askRemove(this.sel); break;
+      case 'upgradepantry': if (fail(E.upgradePantry(w, this.sel))) { this.toast(`Pantry now holds ${pantryCap(this.sel)} ingredients`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'upgradeb': if (fail(E.upgradeBuilding(w, this.sel))) { this.toast(`${DEFS[this.sel.type].name} upgraded to level ${this.sel.lvl}!`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'recipe': this.sel.recipe = d.value; curRecipe(w, this.sel); this.g.dirty(); this.renderCard(); break;
       case 'setcrop': if (fail(E.setCrop(w, this.sel, d.crop))) { this.g.dirty(); this.renderCard(); } break;
@@ -783,7 +784,7 @@ export class UI {
         const n = outTotal(o);
         let st;
         if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%`;
-        else if (!r) st = 'Nothing to make: needs ingredients in storage';
+        else if (!r) st = 'Nothing to make yet: waiting for ingredients';
         else if (n >= outCap(o)) st = 'Output full: waiting for pickup';
         else if (o.prog > 0) st = `Paused at ${Math.floor(o.prog * 100)}%: waiting for an artisan`;
         else {
@@ -792,7 +793,7 @@ export class UI {
         }
         if (!o._busy && w.free() <= 0) st += '<small class="next">Your storage is full. Sell something or upgrade storage to keep goods moving.</small>';
         else if (!o._busy && !s.workers.some((x) => x.role === 'artisan') && /artisan/.test(st)) st += '<small class="next">No artisan yet: others only help when they are free.</small>';
-        const inp = Object.keys(o.inp).length ? Object.entries(o.inp).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
+        const inp = pantryItems(s, o).map((k) => `<span class="pi-slot ${o.inp[k] ? '' : 'empty'}">${itemImg(k)}${o.inp[k] || 0}</span>`).join('') + ` <small>(${pantryUsed(o)}/${pantryCap(o)})</small>`;
         const out = n ? Object.entries(o.out).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
         return { st, inp, out: `${out} <small>(${n}/${outCap(o)})</small>`, pb: `<i style="width:${o.prog * 100}%"></i>` };
       };
@@ -804,7 +805,8 @@ export class UI {
       return { ...base, sub: d.desc,
         body: `<div class="status" data-live="st">${v.st}</div><div class="bar" data-live="pb">${v.pb}</div>
           <div class="row"><span>Make</span><select data-chg="recipe">${opts}</select></div>
-          <div class="io"><span>In: <b data-live="inp">${v.inp}</b></span><span>Out: <b data-live="out">${v.out}</b></span></div>
+          <div class="pantry"><div class="row"><span>${img('box')} Pantry</span>${(o.pl || 1) >= PANTRY.length ? '<span class="max">MAX</span>' : `<button class="btn small" data-act="upgradepantry" data-need="${E.pantryCost(o)}">${img('up')} Hold ${PANTRY[o.pl || 1]} ${coin(E.pantryCost(o))}</button>`}</div><div class="pslots" data-live="inp">${v.inp}</div></div>
+          <div class="io"><span>Out: <b data-live="out">${v.out}</b></span></div>
           <div class="recipes">${recipes}${locked}</div>
           <p class="hint">Tap any item to see what it is for.</p>${this.workTip('craft')}`,
         live: info };

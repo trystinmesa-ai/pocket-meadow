@@ -85,7 +85,7 @@ export function initObject(o) {
   const d = DEFS[o.type];
   if (o.type === 'plot') { o.crop ||= null; o.st ||= 'empty'; o.p ||= 0; o.wet ||= false; }
   if (d.cat === 'tree') { o.p ??= 0.3; }
-  if (d.recipes) { o.lvl ||= 1; o.recipe ||= 'auto'; o.cur ||= null; o.inp ||= {}; o.out ||= {}; o.prog ||= 0; }
+  if (d.recipes) { o.lvl ||= 1; o.pl ||= 1; o.recipe ||= 'auto'; o.cur ||= null; o.inp ||= {}; o.out ||= {}; o.prog ||= 0; }
   if (d.animal) { o.lvl ||= 1; o.feed ||= 0; o.prog ||= 0; o.out ||= 0; }
   if (d.hive) { o.lvl ||= 1; o.prog ||= 0; o.out ||= 0; }
   if (d.store) { o.lvl ||= 1; }

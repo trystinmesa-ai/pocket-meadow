@@ -266,3 +266,10 @@ body.placing #goal { display: none; }
 .shelf { color: var(--ink2); font-weight: 400; }
 .shelfperk.on { color: var(--greenD); font-weight: 700; }
 .thumb.xs { width: 18px; height: 18px; object-fit: contain; image-rendering: pixelated; }
+
+/* workshop pantry */
+.pantry { background: var(--paper2); border: 1.5px solid var(--ink); border-radius: 5px; padding: 4px 8px; margin: 6px 0; }
+.pantry .row { margin: 2px 0 4px; }
+.pslots { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 13px; }
+.pi-slot { display: inline-flex; align-items: center; gap: 2px; background: #fff4da; border-radius: 3px; padding: 1px 4px; }
+.pi-slot.empty { opacity: 0.45; }

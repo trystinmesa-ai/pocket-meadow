@@ -2,7 +2,7 @@
 // hiring and orders. UI code calls these; each returns '' on success or a reason.
 import { ACHIEVEMENTS, achReward, HATS, DEFS, ITEMS, CROPS, UPGRADES, upgradeCost, hireCost, xpForLevel, levelReward, MAX_LEVEL, parcelCost, parcelLevel, MAP } from './data.js';
 import { PW, PH, newWorker, initObject, sellPrice, storeCap, effects } from './world.js';
-import { cancelJobsFor, endJob, dropPile } from './sim.js';
+import { cancelJobsFor, endJob, dropPile, PANTRY } from './sim.js';
 import { seasonAt, festivalOn } from './seasons.js';
 import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS, BUNDLE_ROOMS, BUNDLES, ALL_BUNDLES_REWARD } from './data.js';
 
@@ -175,6 +175,16 @@ export function upgradeBuilding(world, o) {
   if (!spend(world, bUpgradeCost(o))) return 'Not enough coins';
   o.lvl++;
   world.rebuild();
+  return '';
+}
+
+// ---------- workshop pantries ----------
+export const pantryCost = (o) => Math.round(DEFS[o.type].upg * 0.6 * Math.pow(2, (o.pl || 1) - 1));
+export function upgradePantry(world, o) {
+  if (!DEFS[o.type].recipes) return 'Only workshops have a pantry';
+  if ((o.pl || 1) >= PANTRY.length) return 'Pantry is as big as it gets';
+  if (!spend(world, pantryCost(o))) return 'Not enough coins';
+  o.pl = (o.pl || 1) + 1;
   return '';
 }
 

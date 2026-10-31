@@ -29,6 +29,34 @@ export const outTotal = (b) => { let n = 0; for (const k in b.out) n += b.out[k]
 export function recipesFor(state, b) {
   return DEFS[b.type].recipes.filter((r) => (r.level || DEFS[b.type].level) <= state.level);
 }
+
+// ---------- workshop pantries ----------
+// Each workshop keeps its own ingredients, so they don't crowd the barn.
+// Haulers keep a share of every ingredient its recipes use; the recipe being
+// made gets at least two batches' worth. Upgrading the pantry holds more.
+export const PANTRY = [12, 24, 40, 60, 90];
+export const pantryCap = (b) => PANTRY[(b.pl || 1) - 1];
+export const pantryUsed = (b) => { let n = 0; for (const k in b.inp) n += b.inp[k]; return n; };
+export function pantryItems(state, b) {
+  if (b._pi && b._piL === state.level) return b._pi;
+  const set = new Set();
+  for (const r of recipesFor(state, b)) for (const k in r.in) set.add(k);
+  b._piL = state.level;
+  return (b._pi = [...set]);
+}
+/** How many more of an item a workshop's pantry wants right now. */
+export function pantryWant(world, b, k, r = curRecipe(world, b)) {
+  const items = pantryItems(world.state, b);
+  if (!items.includes(k)) return 0;
+  const cap = pantryCap(b), have = b.inp[k] || 0;
+  const cur = r && r.in[k] ? r.in[k] : 0;
+  // room is shared between the ingredients the farm actually has
+  const stocked = items.filter((x) => b.inp[x] || onFarm(world, x) > 0).length || 1;
+  const want = Math.max(Math.floor(cap / stocked), cur * 2) - have;
+  if (want <= 0) return 0;
+  // one batch of the current recipe always fits, so a full pantry can't stall it
+  return Math.max(Math.max(0, cur - have), Math.min(want, cap - pantryUsed(b)));
+}
 const recipeValueGain = (r) => {
   let v = 0; for (const k in r.in) v += ITEMS[k].value * r.in[k];
   return (ITEMS[r.out].value - v) / r.time;
@@ -57,10 +85,22 @@ function takeWaiting(world, o, k, n) {
 const sourcesOf = (world, k) => world.bldgs.concat(world.animals, world.hives).filter((o) => !o._cc && waiting(world, o, k) > 0)
   .concat(world.state.piles.filter((p) => !p._c && p.item === k));
 /** Everything on the farm a workshop could use: storage plus goods waiting elsewhere. */
+// Counted once per tick: it's only a guide, the real take checks actual amounts.
+function waitingAll(world) {
+  if (world._waitT === world.time) return world._wait;
+  const m = {};
+  for (const o of world.bldgs) if (!o._cc) for (const k in o.out) m[k] = (m[k] || 0) + o.out[k];
+  for (const o of world.animals.concat(world.hives)) {
+    if (o._cc || !o.out) continue;
+    const d = DEFS[o.type], k = d.hive ? d.hive.item : d.animal.item;
+    m[k] = (m[k] || 0) + o.out;
+  }
+  for (const p of world.state.piles) if (!p._c) m[p.item] = (m[p.item] || 0) + p.qty;
+  world._waitT = world.time; world._wait = m;
+  return m;
+}
 function onFarm(world, k, except) {
-  let n = world.have(k);
-  for (const o of sourcesOf(world, k)) if (o !== except) n += waiting(world, o, k);
-  return n;
+  return world.have(k) + (waitingAll(world)[k] || 0) - (except && !except._cc ? waiting(world, except, k) : 0);
 }
 function feasible(world, b, r) {
   for (const k in r.in) if ((b.inp[k] || 0) + onFarm(world, k, b) < r.in[k]) return false;
@@ -71,8 +111,9 @@ const hasInputs = (b, r) => { for (const k in r.in) if ((b.inp[k] || 0) < r.in[k
 // Switch a workshop to a recipe; inputs it no longer needs go back to storage.
 function switchRecipe(world, b, r) {
   b.cur = r ? r.out : null;
+  const keep = pantryItems(world.state, b);
   for (const k of Object.keys(b.inp)) {
-    if (r && r.in[k]) continue;
+    if ((r && r.in[k]) || keep.includes(k)) continue;
     const back = world.addItem(k, b.inp[k]);
     b.inp[k] -= back;
     if (!b.inp[k]) delete b.inp[k];
@@ -315,6 +356,20 @@ function resolveDeliver(world, w, job, s) {
     job.steps.splice(job.i, 0, { t: 'do', anim: 'drop', dur: 0.4, fx: () => dropPile(world, w, wx(w), wy(w)) });
     return;
   }
+  const pb = nearest(world.bldgs, w, (o) => !o._cs && !bad(world, o) && pantryWant(world, o, w.carry.item) > 0);
+  if (pb) {
+    const [px, py] = doorTile(pb);
+    job.steps.splice(job.i, 0, { t: 'go', x: px, y: py, ref: pb.id }, {
+      t: 'do', anim: 'deposit', dur: 0.5, fx: () => {
+        const c = w.carry; if (!c) return;
+        const q = Math.min(c.qty, pantryWant(world, pb, c.item));
+        if (q > 0) { pb.inp[c.item] = (pb.inp[c.item] || 0) + q; c.qty -= q; float(world, px, py - 1, `+${q}`, c.item); }
+        if (c.qty <= 0) w.carry = null;
+        else job.steps.splice(job.i, 0, { t: 'deliver', allowPile: false }); // the rest goes on to storage
+      },
+    });
+    return;
+  }
   const st = nearestStorage(world, w);
   if (!st) {
     job.steps.splice(job.i, 0, { t: 'do', anim: 'drop', dur: 0.4, fx: () => dropPile(world, w, wx(w), wy(w)) });
@@ -452,11 +507,11 @@ const FIND = {
     for (const b of world.bldgs) {
       if (b._cs || bad(world, b)) continue;
       const r = curRecipe(world, b);
-      if (!r) continue;
-      let need = null, deficit = 0;
-      for (const k in r.in) {
-        const want = r.in[k] * 2 - (b.inp[k] || 0);
-        if (want > deficit && onFarm(world, k, b) > 0) { deficit = want; need = k; }
+      let need = null, deficit = 0, best = 0;
+      for (const k of pantryItems(world.state, b)) {
+        const want = pantryWant(world, b, k, r);
+        const score = want + (r && r.in[k] ? 1000 : 0); // the recipe being made comes first
+        if (want > 0 && score > best && onFarm(world, k, b) > 0) { best = score; deficit = want; need = k; }
       }
       if (need) cand.push({ b, item: need, deficit, x: b.x, y: b.y });
     }

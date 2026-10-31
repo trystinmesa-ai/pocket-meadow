@@ -478,6 +478,34 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(m.bundles && m.bundles.done && m.bundles.give, 'Old saves get an empty pantry');
 }
 
+// 25. workshop pantries hold their own ingredients
+{
+  const S = await import('../js/sim.js');
+  const w = empty(), s = w.state;
+  rich(w, 20, 1e6);
+  const put = (type) => { for (let y = 10; y < 34; y++) for (let x = 8; x < 40; x++) if (E.place(w, type, x, y) === '') return w.objAt(x, y); };
+  const bakery = put('bakery');
+  newWorker(s, 'hauler', 'Bea');
+  s.workers[0].x = 20.5; s.workers[0].y = 20.5;
+  w.rebuild();
+  for (const k of ['flour', 'egg', 'sugar', 'butter', 'potato', 'apple', 'cornmeal']) w.addItem(k, 8);
+  const before = w.used();
+  run(w, 240, true);
+  const kinds = Object.keys(bakery.inp).length, used = S.pantryUsed(bakery);
+  ok(kinds >= 4, 'Haulers stock the bakery with many different ingredients', JSON.stringify(bakery.inp));
+  ok(used <= S.pantryCap(bakery) + 6 && w.used() < before, 'The pantry stays within its size and the barn empties', `${used}/${S.pantryCap(bakery)}, barn ${before} -> ${w.used()}`);
+  const cap0 = S.pantryCap(bakery), c0 = s.coins, cost = E.pantryCost(bakery);
+  ok(E.upgradePantry(w, bakery) === '' && S.pantryCap(bakery) > cap0 && s.coins === c0 - cost, 'Upgrading the pantry holds more', `${cap0} -> ${S.pantryCap(bakery)} for ${cost}`);
+  bakery.recipe = 'cornbread'; S.curRecipe(w, bakery);
+  ok(Object.keys(bakery.inp).length >= kinds - 1, 'Switching recipes keeps ingredients in the pantry', JSON.stringify(bakery.inp));
+  // harvests go straight into a pantry that wants them
+  const w2 = fresh(); rich(w2, 20, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w2, 'mill', x, y) === '') mill = w2.objAt(x, y);
+  w2.state.settings.helpers = false;
+  run(w2, 400, true);
+  ok((mill.inp.wheat || 0) + (mill.out.flour || 0) + (w2.state.stats.craft.flour || 0) > 0 && (mill.inp.wheat || 0) <= S.pantryCap(mill), 'Wheat goes into the mill’s pantry', JSON.stringify(mill.inp));
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>
