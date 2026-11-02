@@ -16,7 +16,10 @@ import { fmtShort } from './render.js';
 import * as Cloud from './cloud.js';
 import { exportSave, parseSave } from './save.js';
 import { seasonAt, seasonDaysLeft, festivalOn, untilFestival, inSeason, canPlantNow } from './seasons.js';
-import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD } from './data.js';
+import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD, MATS, matsFor, upgMatsFor, buildTime, needsBuilding,
+  QZONES, QNODES, SHED_MAX, shedCap, shedCost, VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT } from './data.js';
+import { merchantHere, nextVisit, stockOf, offerName, soldOut } from './merchant.js';
+import { debrisSprite } from './art/quarry.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +34,10 @@ export function fmtTime(sec) {
 }
 const coin = (n) => `<span class="cost">${img('coin')}${fmt(n)}</span>`;
 const PAINTABLE = new Set(['field', 'path', 'fence']);
+/** Material chips, e.g. [wood]12 [stone]8; ones you're short of are marked. */
+const matsHTML = (m, w) => (m ? Object.entries(m).map(([k, n]) => `<span class="mat ${w && w.mat(k) < n ? 'short' : ''}" title="${ITEMS[k].name}">${itemImg(k)}${fmt(n)}</span>`).join('') : '');
+/** Attributes that keep a buy button disabled until you can afford it. */
+const needAttr = (cost, mats) => `data-need="${cost}"${mats ? ` data-mats='${JSON.stringify(mats)}'` : ''}`;
 
 const thumbCache = new Map();
 function thumb(type, extra) {
@@ -43,6 +50,7 @@ function thumb(type, extra) {
   else if (d.cat === 'path') cv = pathThumb(type);
   else if (d.cat === 'fence') cv = fenceSprite(type, 10);
   else if (d.cat === 'decor') cv = decorSprite(type);
+  else if (d.cat === 'debris') cv = debrisSprite(type);
   else cv = buildingSprite(type);
   const url = cv.toDataURL();
   thumbCache.set(key, url);
@@ -94,7 +102,7 @@ export class UI {
     this.mode = null;
     this.sel = null;
     this.sheet = null;
-    this.tab = { build: 'field', menu: 'farm', journal: 'goals' };
+    this.tab = { build: 'field', menu: 'farm', journal: 'goals', orders: 'orders' };
     this.toastQ = [];
     this.modalQ = [];
     this.lastFull = 0;
@@ -112,14 +120,15 @@ export class UI {
       <button class="res" data-act="sheet" data-v="market" aria-label="Storage">${img('box')}<b id="h-store">0/0</b></button>
       <button class="res charm" data-act="charminfo" aria-label="Charm">${img('heart')}<b id="h-charm">0</b></button>
       <button class="res season" id="h-season" data-act="sheet" data-v="season" aria-label="Season and festival"></button>
+      <button class="res merchant" id="h-merchant" data-act="openmerchant" aria-label="Travelling merchant" hidden>${img('market')}<b>Merchant</b></button>
       <span class="res wx" id="h-wx"></span>`;
     const dock = [
       ['build', 'hammer', 'Build'], ['workers', 'people', 'Farmhands', 'Crew'], ['market', 'market', 'Market'],
-      ['orders', 'scroll', 'Orders'], ['journal', 'book', 'Journal'], ['upgrades', 'up', 'Upgrades', 'Perks'], ['land', 'map', 'Land'], ['menu', 'menu', 'Menu'],
+      ['orders', 'scroll', 'Village'], ['journal', 'book', 'Journal'], ['upgrades', 'up', 'Upgrades', 'Perks'], ['land', 'map', 'Land'], ['menu', 'menu', 'Menu'],
     ];
     $('#dock').innerHTML = dock.map(([id, ic, name, short]) =>
       `<button data-act="${id === 'land' ? 'landmode' : 'sheet'}" data-v="${id}" id="d-${id}" aria-label="${name}">${img(ic, 'pi big')}<span class="long${short ? ' cut' : ''}">${name}</span>${short ? `<span class="short">${short}</span>` : ''}<em class="badge" id="b-${id}"></em></button>`).join('');
-    for (const el of ['#hud', '#dock', '#sheet', '#card', '#placebar', '#goal', '#modal', '#zoom']) {
+    for (const el of ['#hud', '#dock', '#sheet', '#card', '#placebar', '#scenebar', '#goal', '#modal', '#zoom']) {
       $(el).addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
         if (!b || b.disabled) return;
@@ -143,6 +152,8 @@ export class UI {
   act(a, d, el) {
     const w = this.w, s = this.s;
     const fail = (why) => { if (why) this.toast(why, 'bad'); return !why; };
+    // building and buying land happen on the farm
+    if (this.inQuarry() && (a === 'landmode' || a === 'pick' || a === 'removemode' || (a === 'sheet' && d.v === 'build'))) this.goFarm();
     switch (a) {
       case 'sheet': this.openSheet(this.sheet === d.v ? null : d.v); break;
       case 'close': this.openSheet(null); break;
@@ -173,7 +184,25 @@ export class UI {
       // farmhands
       case 'hirerole': this.hireRole = d.v; this.renderSheet(); break;
       case 'hire': if (fail(E.hire(w, this.hireRole))) { this.g.dirty(); this.renderSheet(); } break;
-      case 'find': { const wk = s.workers.find((x) => x.id === +d.id); if (wk) { this.openSheet(null); this.select(wk); this.g.focus(wk.x * TILE, wk.y * TILE); } break; }
+      case 'find': { const wk = s.workers.find((x) => x.id === +d.id); if (wk) { this.openSheet(null); if (wk.role === 'miner') this.goQuarry(); else this.goFarm(); this.select(wk); this.g.focus(wk.x * TILE, wk.y * TILE); } break; }
+      // materials & quarry
+      case 'cleardebris': { const o = this.sel, g = DEFS[o.type].gives; if (fail(E.remove(w, o))) { this.toast(`Cleared! +${E.matsText(g)}`, 'good'); this.select(null); this.g.dirty(); } break; }
+      case 'goquarry': this.goQuarry(); break;
+      case 'openmerchant': this.tab.orders = 'merchant'; this.openSheet('orders'); break;
+      case 'giveproject': if (fail(E.giveProject(w, d.id))) { this.g.dirty(); this.renderSheet(); } break;
+      case 'payproject': if (fail(E.giveProject(w, d.id, true))) { this.coinPop(el); this.g.dirty(); this.renderSheet(); } break;
+      case 'buyoffer': {
+        const [kind, id] = d.key.split(':');
+        if (kind === 'decor') { this.openSheet(null); this.startPlacing(id, {}); break; }
+        if (fail(E.buyOffer(w, d.key))) { this.toast(`Bought ${offerName(d.key)}!`, 'good'); this.coinPop(el); this.g.dirty(); this.renderSheet(); }
+        break;
+      }
+      case 'sellgold': { const c = E.sellGold(w, d.item, +d.n || 1e9); if (c) { this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
+      case 'gofarm': this.goFarm(); break;
+      case 'hireminer': this.hireRole = 'miner'; this.openSheet('workers'); break;
+      case 'openzone': if (fail(E.openZone(w, +d.i))) { this.g.dirty(); this.renderSheet(); } break;
+      case 'upgradeshed': if (fail(E.upgradeShed(w))) { this.toast(`The shed now holds ${w.shedCap} of each material`, 'good'); this.g.dirty(); this.renderSheet(); } break;
+      case 'sellmat': { const c = E.sellMat(w, d.item, +d.n); if (c) { this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
       case 'rename': this.rename(+d.id); break;
       case 'helpers': s.settings.helpers = !!d.checked; this.g.dirty(); break;
       // market
@@ -234,7 +263,7 @@ export class UI {
     $('#h-coins').textContent = fmt(s.coins);
     $('#h-level').textContent = s.level;
     const a = xpForLevel(s.level), b = xpForLevel(s.level + 1);
-    $('#h-xp').style.width = s.level >= MAX_LEVEL ? '100%' : `${Math.min(100, ((s.xp - a) / (b - a)) * 100)}%`;
+    $('#h-xp').style.width = s.level >= MAX_LEVEL ? '100%' : `${Math.max(0, Math.min(100, ((s.xp - a) / (b - a)) * 100))}%`;
     const used = w.used();
     const st = $('#h-store');
     st.textContent = `${fmt(used)}/${fmt(w.capacity)}`;
@@ -252,7 +281,11 @@ export class UI {
     $('#h-season').classList.toggle('ready', fo > 0);
     this.badge('journal', E.claimableAch(w) + E.bundlesReady(w) || '');
     this.badge('workers', s.workers.length < w.housing && s.coins >= E.nextHireCost(w) ? '!' : '');
+    const mv = merchantHere(w), mb = $('#h-merchant');
+    if (mb.hidden !== !mv) mb.hidden = !mv;
+    if (mv && this.merchantK !== mv.k) { if (this.merchantK !== undefined || Date.now() - mv.start < 60000) this.toast('The travelling merchant has arrived! Tap the cart up top to see their wares.', 'good'); this.merchantK = mv.k; }
     this.renderGoal();
+    if (this.inQuarry()) { const q = $('#scenebar [data-live="qs"]'), v = this.quarryStatus(s.workers.filter((x) => x.role === 'miner').length); if (q && q._v !== v) { q.innerHTML = v; q._v = v; } }
     if (this.sheet) this.liveSheet();
     if (this.sel) this.liveCard();
     if (this.mode?.k === 'place' || this.mode?.k === 'paint') this.renderPlacebar(true);
@@ -305,6 +338,7 @@ export class UI {
     const scroll = prev ? prev.scrollTop : 0;
     el.innerHTML = `<div class="sh"><h2>${body.title}</h2>${body.tabs || ''}<button class="x" data-act="close" aria-label="Close">${img('x')}</button></div><div class="sb">${body.html}</div>`;
     el.querySelector('.sb').scrollTop = scroll;
+    this.updateNeeds(el);
   }
   liveSheet() {
     const el = $('#sheet');
@@ -316,7 +350,10 @@ export class UI {
       if (n && n._v !== vals[k]) { n.innerHTML = vals[k]; n._v = vals[k]; }
     }
     // keep buttons enabled state current
-    for (const b of el.querySelectorAll('[data-need]')) b.disabled = this.s.coins < +b.dataset.need;
+    this.updateNeeds(el);
+  }
+  updateNeeds(el) {
+    for (const b of el.querySelectorAll('[data-need]')) b.disabled = this.s.coins < +b.dataset.need || (!!b.dataset.mats && !this.w.hasMats(JSON.parse(b.dataset.mats)));
   }
   tabs(sheet, list) {
     return `<div class="tabs">${list.map(([id, name]) => `<button class="${this.tab[sheet] === id ? 'on' : ''}" data-act="tab" data-sheet="${sheet}" data-v="${id}">${name}</button>`).join('')}</div>`;
@@ -354,6 +391,7 @@ export class UI {
         types.sort((a, b) => DEFS[a].level - DEFS[b].level);
         html += `<h3>${name}</h3><div class="grid">${types.map((k) => this.buildTile(k)).join('')}</div>`;
       }
+      if (tab === 'build') html = `<p class="hint">Buildings need materials as well as coins: you have ${this.matsLine()}. Farmhands clear fallen branches and rocks on your land for wood and stone. For much more, and for ore, buy land at the edge of the map and follow the trail to the quarry.</p>` + html;
       if (tab === 'decor') html = `<p class="hint">Decorations are just for looks, but each one adds a little charm (charm raises sell prices a bit).</p>` + html;
     }
     html += `<div class="row center"><button class="btn" data-act="removemode">${img('trash')} Remove things</button></div>`;
@@ -363,14 +401,16 @@ export class UI {
     const w = this.w, s = this.s, d = DEFS[type];
     const lock = s.level < d.level;
     const cost = E.costOf(w, type);
+    const mats = matsFor(type, w.count(type)), bt = buildTime(type, cost);
     const meta = d.charm ? `${img('heart')}+${d.charm} charm` : d.store ? `${img('box')}+${d.store} storage` : d.houses ? `${img('people')} houses ${d.houses}` : d.speed ? `walk ×${d.speed}` : '';
     return `<div class="tile ${lock ? 'locked' : ''}"><img class="thumb" src="${thumb(type)}" alt="">
       <div class="tn">${d.name}</div><div class="tm">${meta}</div>
       ${d.desc ? `<div class="td">${esc(d.desc)}</div>` : ''}
+      ${mats ? `<div class="tmats">${matsHTML(mats, w)}</div><div class="tm">${img('clock')} Builds in ${fmtTime(bt)}</div>` : ''}
       ${d.season ? `<span class="stag ${E.seasonalBlock(w, d) ? '' : 'on'}">${img(d.season)} ${SEASONS.find((x) => x.id === d.season).name} only</span>` : ''}
       ${lock ? `<span class="lock">${img('lock')} Lv ${d.level}</span>` : E.seasonalBlock(w, d) ? `<span class="lock">${img('lock')} ${E.seasonalBlock(w, d)}</span>`
         : d.ribbons ? `<button class="btn small" data-act="pick" data-type="${type}" ${s.ribbons < d.ribbons ? 'disabled' : ''}>${ribbon(d.ribbons)}</button>`
-        : `<button class="btn small" data-act="pick" data-type="${type}" data-need="${cost}">${coin(cost)}</button>`}</div>`;
+        : `<button class="btn small" data-act="pick" data-type="${type}" ${needAttr(cost, mats)}>${coin(cost)}</button>`}</div>`;
   }
 
   sheet_workers() {
@@ -378,9 +418,9 @@ export class UI {
     const cost = E.nextHireCost(w);
     const room = s.workers.length < w.housing;
     let html = `<div class="hire"><div class="roles">${ROLE_ORDER.map((r) => `<button class="${this.hireRole === r ? 'on' : ''}" data-act="hirerole" data-v="${r}">${ROLES[r].name}</button>`).join('')}</div>
-      <p class="hint">${esc(ROLES[this.hireRole].desc)}</p>
+      <p class="hint">${esc(ROLES[this.hireRole].desc)}${this.hireRole === 'miner' && !s.quarry ? ' <b>Find the quarry first:</b> buy land at the edge of the map and follow the trail sign.' : ''}</p>
       <div class="row"><span>${img('people')} ${s.workers.length}/${w.housing} beds${room ? '' : ' · build a Cottage for more'}</span>
-      <button class="btn green" data-act="hire" ${room ? `data-need="${cost}"` : 'disabled'}>Hire ${coin(cost)}</button></div></div>`;
+      <button class="btn green" data-act="hire" ${room && (this.hireRole !== 'miner' || s.quarry) ? `data-need="${cost}"` : 'disabled'}>Hire ${coin(cost)}</button></div></div>`;
     html += `<label class="check"><input type="checkbox" data-chg="helpers" ${s.settings.helpers ? 'checked' : ''}> Farmhands help with other jobs when their own work is done</label>`;
     html += '<div class="list">';
     for (const wk of s.workers) {
@@ -395,8 +435,8 @@ export class UI {
     html += '</div><h3>' + img('hat') + ' Hat rack</h3><p class="hint">Earn hats from achievements in the Journal, or buy a few here. Tap a farmhand to dress them up.</p><div class="list">';
     for (const [id, h] of Object.entries(HATS)) {
       const have = E.hatUnlocked(s, id);
-      html += `<div class="urow ${have ? '' : 'locked'}"><img class="ava" src="${hatPreview(id)}" alt=""><div class="ui"><div class="un">${h.name}</div><div class="ud">${have ? 'In your hat rack' : h.cost ? 'For sale' : h.ribbons ? `Festival prize at the ${SEASONS.find((x) => x.id === h.festival).festival}` : h.bundle ? `Reward from the ${E.bundleLabel(h.bundle)}` : `Earned from ${achName(h.ach)}`}</div></div>
-        ${have ? '<span class="max">OWNED</span>' : h.cost ? `<button class="btn small" data-act="buyhat" data-id="${id}" data-need="${h.cost}">${coin(h.cost)}</button>` : h.ribbons && !E.seasonalBlock(this.w, h) ? `<button class="btn small" data-act="buyhat" data-id="${id}" ${s.ribbons < h.ribbons ? 'disabled' : ''}>${ribbon(h.ribbons)}</button>` : `<span class="lock">${img('lock')}</span>`}</div>`;
+      html += `<div class="urow ${have ? '' : 'locked'}"><img class="ava" src="${hatPreview(id)}" alt=""><div class="ui"><div class="un">${h.name}</div><div class="ud">${have ? 'In your hat rack' : h.cost ? 'For sale' : h.ribbons ? `Festival prize at the ${SEASONS.find((x) => x.id === h.festival).festival}` : h.bundle ? `Reward from the ${E.bundleLabel(h.bundle)}` : h.villager ? `A gift from ${VILLAGERS.find((v) => v.id === h.villager).name} at 3 hearts` : h.merchant ? 'Sold by the travelling merchant' : `Earned from ${achName(h.ach)}`}</div></div>
+        ${have ? '<span class="max">OWNED</span>' : h.cost && !h.merchant ? `<button class="btn small" data-act="buyhat" data-id="${id}" data-need="${h.cost}">${coin(h.cost)}</button>` : h.ribbons && !E.seasonalBlock(this.w, h) ? `<button class="btn small" data-act="buyhat" data-id="${id}" ${s.ribbons < h.ribbons ? 'disabled' : ''}>${ribbon(h.ribbons)}</button>` : `<span class="lock">${img('lock')}</span>`}</div>`;
     }
     html += '</div>' + this.petsSection();
     html += '<p class="hint">Farmhands keep the job they were hired for. To change jobs, let someone go from their card (you get half the cost back) and hire someone new. Farmhands level up as they work: each level makes them 5% quicker at tasks and 4% faster on their feet.</p>';
@@ -475,10 +515,20 @@ export class UI {
         ${auto !== undefined ? `<span class="keep">keep <button class="btn tiny" data-act="reserve" data-item="${k}" data-n="-5">−</button><b>${auto}</b><button class="btn tiny" data-act="reserve" data-item="${k}" data-n="5">+</button></span>` : ''}</div></div>`;
     }
     html += '</div><p class="hint">Auto-sell sells anything above the amount you keep, even while you are away. Keep some if a workshop needs it.</p>';
+    const golds = Object.keys(s.gold).filter((k) => s.gold[k] > 0);
+    if (golds.length) {
+      html += `<h3>${img('star')} Gold-star produce</h3><p class="hint">Your best harvests, worth ${GOLD_MULT}× the usual price.</p><div class="list">`;
+      for (const k of golds) html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">Gold-star ${ITEMS[k].name} ${img('star')}</div><div class="iq"><b>${fmt(s.gold[k])}</b> · ${coin(E.goldPrice(w, k))} each</div></div>
+        <div class="ib"><button class="btn small gold" data-act="sellgold" data-item="${k}" data-n="all">Sell all</button></div></div>`;
+      html += '</div>';
+    }
+    html += `<h3>${itemImg('wood')} Building materials</h3><div class="chips matrow" data-live="mats">${this.matsLine()}</div>
+      <div class="row"><span class="hint">Kept in the material shed (up to ${fmt(w.shedCap)} each), not the barn.</span><button class="btn small" data-act="sheet" data-v="quarry">${img('pick')} Quarry & shed</button></div>`;
     return { title: `${img('market', 'pi big')} Market`, html };
   }
+  matsLine() { return MATS.map((k) => `<span class="mat">${infoImg(k)}${fmt(this.w.mat(k))}</span>`).join(''); }
   live_market() {
-    const w = this.w, out = { store: `${fmt(w.used())} / ${fmt(w.capacity)} stored` };
+    const w = this.w, out = { store: `${fmt(w.used())} / ${fmt(w.capacity)} stored`, mats: this.matsLine() };
     for (const k in ITEMS) if (w.haveAll(k)) out[`q${k}`] = this.qtyText(k);
     return out;
   }
@@ -487,29 +537,118 @@ export class UI {
     return fmt(this.w.haveAll(k)) + (n ? ` <span class="inb">(${fmt(n)} in workshops)</span>` : '');
   }
 
+  sheet_quarry() {
+    const w = this.w, s = this.s, q = s.quarry;
+    const title = `${img('pick', 'pi big')} Quarry`;
+    if (!q) return { title, html: `<p class="hint">Somewhere past the edge of your land there's an old quarry full of timber, stone and ore. Buy land along the edge of the map and a trail sign appears: tap it to find the quarry.</p>${this.shedHTML()}` };
+    const miners = s.workers.filter((x) => x.role === 'miner').length;
+    let html = `<p class="hint">Miners chop trees and dig stone and ore here, and the cart sends it to your material shed. Trees and veins grow back after a while. Miners keep working while you're away.</p>
+      <div class="row"><span>${img('people')} ${miners} miner${miners === 1 ? '' : 's'}</span><span><button class="btn small" data-act="hireminer">Hire a miner</button> ${this.inQuarry() ? '' : `<button class="btn small green" data-act="goquarry">Visit</button>`}</span></div>`;
+    html += this.shedHTML();
+    html += `<h3>Quarry zones</h3><div class="list">`;
+    QZONES.forEach((z, i) => {
+      const open = i < q.zones, why = E.zoneBlock(w, i);
+      const kinds = [...new Set(Object.keys(z.nodes).map((k) => QNODES[k].item))];
+      html += `<div class="urow ${open ? '' : 'locked'}"><div class="ui"><div class="un">${z.name}</div><div class="ud">${kinds.map((k) => itemImg(k)).join('')} ${kinds.map((k) => ITEMS[k].name).join(', ')}</div>
+        ${!open && z.mats ? `<div class="tmats">${matsHTML(z.mats, w)}</div>` : ''}</div>
+        ${open ? '<span class="max">OPEN</span>' : why ? `<span class="lock">${img('lock')} ${why}</span>` : `<button class="btn small green" data-act="openzone" data-i="${i}" ${needAttr(z.cost, z.mats)}>Open ${coin(z.cost)}</button>`}</div>`;
+    });
+    html += '</div>';
+    return { title, html };
+  }
+  shedHTML() {
+    const w = this.w, s = this.s, L = s.shed || 1;
+    let html = `<h3>${img('box')} Material shed</h3><div class="list">`;
+    for (const k of MATS) {
+      html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="m${k}">${fmt(w.mat(k))}</b> / ${fmt(w.shedCap)} · ${coin(ITEMS[k].value)} each</div></div>
+        <div class="ib"><button class="btn small" data-act="sellmat" data-item="${k}" data-n="10" ${w.mat(k) < 1 ? 'disabled' : ''}>Sell 10</button></div></div>`;
+    }
+    html += '</div>';
+    if (L >= SHED_MAX) html += '<p class="hint">Your shed is as big as it gets.</p>';
+    else { const c = shedCost(L); html += `<div class="row"><span>Bigger shed: hold ${fmt(shedCap(L + 1))} of each <span class="tmats">${matsHTML(c.mats, w)}</span></span><button class="btn small green" data-act="upgradeshed" ${needAttr(c.coins, c.mats)}>${img('up')} ${coin(c.coins)}</button></div>`; }
+    return html;
+  }
+  live_quarry() { const out = {}; for (const k of MATS) out[`m${k}`] = fmt(this.w.mat(k)); return out; }
+
   sheet_orders() {
+    const tab = this.tab.orders;
+    const v = merchantHere(this.w);
+    const tabs = this.tabs('orders', [['orders', 'Orders'], ['friends', 'Neighbours'], ['village', 'Restore'], ['merchant', v ? 'Merchant!' : 'Merchant']]);
+    const html = tab === 'friends' ? this.friendsHTML() : tab === 'village' ? this.villageHTML() : tab === 'merchant' ? this.merchantHTML() : this.ordersHTML();
+    return { title: `${img('scroll', 'pi big')} Village`, tabs, html };
+  }
+  ordersHTML() {
     const w = this.w, s = this.s;
-    let html = `<p class="hint">Neighbours post requests here. Orders pay much more than the market and give bonus XP.</p>`;
+    let html = `<p class="hint">Neighbours post requests here. Orders pay much more than the market, give bonus XP and make friends. Neighbours ask for their favourite things most often.</p>`;
     if (!s.orders.length) html += `<p class="empty">No orders right now.</p>`;
     for (const o of s.orders) {
-      const ok = E.canFill(w, o);
-      html += `<div class="order ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} would like:</div><div class="oi">${o.items.map((x) => {
+      const ok = E.canFill(w, o), v = VILLAGERS.find((x) => x.id === o.who);
+      const fav = (k) => v && v.likes.includes(k) ? ` <span class="fav" title="${esc(v.name)} loves this">${img('heart')}</span>` : '';
+      html += `<div class="order ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} would like:${v ? ` <span class="hearts">${this.heartsHTML(s.friends[v.id])}</span>` : ''}</div><div class="oi">${o.items.map((x) => {
         const have = w.haveAll(x.item);
-        return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}</span>`;
+        return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}${fav(x.item)}</span>`;
       }).join('')}</div>
-        <div class="row"><span>Reward ${coin(o.reward)} <span class="xp">+${fmt(o.xp)} XP</span></span>
+        <div class="row"><span>Reward ${coin(o.reward)} <span class="xp">+${fmt(o.xp)} XP</span>${v ? ` <span class="xp">+${E.friendPoints(o)} ${img('heart')}</span>` : ''}</span>
         <span><button class="btn small" data-act="skip" data-id="${o.id}">Skip</button> <button class="btn small green" data-act="fill" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></span></div></div>`;
     }
     html += `<p class="hint" data-live="next">${this.nextOrderText()}</p>`;
-    return { title: `${img('scroll', 'pi big')} Orders`, html };
+    return html;
+  }
+  heartsHTML(pts = 0) {
+    const h = heartsOf(pts);
+    return HEARTS.map((_, i) => `<i class="ht ${i < h ? 'on' : ''}"></i>`).join('');
+  }
+  friendsHTML() {
+    const s = this.s;
+    let html = '<p class="hint">Fill a neighbour’s orders to become friends. Each heart brings a gift, and at five hearts they do you a lasting favour. Orders with their favourite things count extra.</p><div class="list">';
+    for (const v of VILLAGERS) {
+      const pts = s.friends[v.id] || 0, h = heartsOf(pts), next = HEARTS[h];
+      const g = h < HEARTS.length ? E.heartGift(v, h + 1) : null;
+      const giftText = (x) => x.coins ? coin(x.coins) : x.ribbons ? ribbon(x.ribbons) : x.hat ? `the ${HATS[x.hat].name}` : v.perkText;
+      html += `<div class="friend"><div class="fh"><b>${esc(v.name)}</b><span class="hearts">${this.heartsHTML(pts)}</span></div>
+        <div class="fd">${esc(v.about)}</div>
+        <div class="fl">Loves ${v.likes.map((k) => infoImg(k)).join('')}</div>
+        <div class="fn">${g ? `Next heart (${pts}/${next}): ${giftText(g)}` : `Best friends: ${esc(v.perkText)}`}</div></div>`;
+    }
+    return html + '</div>';
+  }
+  villageHTML() {
+    const w = this.w;
+    let html = '<p class="hint">The village next door has seen better days. Help fix it up: give goods, materials and coins a little at a time, whenever you have some spare. Each finished building helps your farm for good.</p><div class="list">';
+    for (const p of PROJECTS) {
+      const st = E.projectState(w, p.id);
+      const slots = st.slots.map((x) => `<span class="need ${x.got >= x.need ? 'ok' : ''}">${x.k === 'coins' ? img('coin') : itemImg(x.k)}<b>${fmt(x.got)}/${fmt(x.need)}</b></span>`).join('');
+      html += `<div class="order project ${st.done ? 'done' : ''} ${st.open ? '' : 'locked'}"><div class="of"><img class="thumb xs" src="${thumb(p.thumb)}" alt=""><b>${p.name}</b>${st.done ? ` <span class="max">RESTORED</span>` : ''}</div>
+        <div class="shelfperk">${img('star')} ${esc(p.text)}</div>
+        ${st.done ? '' : `<div class="oi">${slots}</div><div class="row"><span class="hint">${st.open ? 'Give what you have now, the rest later.' : `${img('lock')} Opens at farm level ${p.level}`}</span>
+        <span><button class="btn small" data-act="payproject" data-id="${p.id}" ${st.canPay ? '' : 'disabled'}>Pay ${coin(Math.min(st.slots.find((x) => x.k === 'coins')?.left || 0, Math.max(0, Math.floor(this.s.coins))))}</button>
+        <button class="btn small green" data-act="giveproject" data-id="${p.id}" ${st.canGive ? '' : 'disabled'}>Give goods</button></span></div>`}</div>`;
+    }
+    return html + '</div>';
+  }
+  merchantHTML() {
+    const w = this.w, s = this.s;
+    if (!w.fx.merchant) return `<p class="hint">Travelling merchants stopped coming when the old bridge fell down. Restore the <b>Old Stone Bridge</b> (in the Restore tab) and they’ll visit every couple of days with rare wares.</p>`;
+    const v = merchantHere(w);
+    if (!v) { const n = nextVisit(Date.now()); return `<p class="hint">The merchant’s cart is on the road. Next visit in about <b>${fmtTime((n.start - Date.now()) / 1000)}</b>, for ${fmtTime((n.end - n.start) / 1000)}. Wares change every visit.</p>`; }
+    let html = `<p class="hint">Rare wares, this visit only. The cart leaves in <b data-live="mleft">${fmtTime((v.end - Date.now()) / 1000)}</b>.</p><div class="list">`;
+    for (const o of stockOf(v.k)) {
+      const [kind, id] = o.key.split(':'), out = soldOut(s, v, o.key);
+      const pic = kind === 'mat' ? itemImg(id, 'pi big') : kind === 'decor' ? `<img class="ava" src="${thumb(id)}" alt="">` : kind === 'hat' ? `<img class="ava" src="${hatPreview(id)}" alt="">` : img('star', 'pi big');
+      const desc = kind === 'mat' ? 'Straight into the material shed' : kind === 'decor' ? `Only from the merchant · +${DEFS[id].charm} charm` : kind === 'hat' ? 'A hat for your hat rack' : PERKS[id].desc;
+      html += `<div class="urow ${out ? 'locked' : ''}">${pic}<div class="ui"><div class="un">${offerName(o.key)}</div><div class="ud">${esc(desc)}</div></div>
+        ${out ? '<span class="max">SOLD</span>' : `<button class="btn small green" data-act="buyoffer" data-key="${o.key}" data-need="${o.price}">${coin(o.price)}</button>`}</div>`;
+    }
+    return html + '</div>';
   }
   nextOrderText() {
     const s = this.s;
-    if (s.orders.length >= 3) return 'The board is full. Deliver or skip an order to get a new one.';
+    if (s.orders.length >= this.w.fx.orderSlots) return 'The board is full. Deliver or skip an order to get a new one.';
     return `Next order in about ${fmtTime((s.nextOrderAt - Date.now()) / 1000)}.`;
   }
   live_orders() {
     const w = this.w, out = { next: this.nextOrderText() };
+    const v = merchantHere(w); if (v) out.mleft = fmtTime((v.end - Date.now()) / 1000);
     for (const o of this.s.orders) for (const x of o.items) out[`o${o.id}${x.item}`] = `${fmt(Math.min(w.haveAll(x.item), x.qty))}/${x.qty}`;
     return out;
   }
@@ -636,6 +775,8 @@ export class UI {
         <p><b>Making things:</b> workshops turn crops into goods worth much more. Tap a workshop to pick a recipe, or leave it on Auto to make the most valuable thing it can.</p>
         <p><b>While you are away:</b> the farm keeps running for up to ${w.fx.offlineH} hours (Night Shift adds more). Coins from auto-sell wait for you to collect. Storage limits apply, so upgrade your barn and use auto-sell.</p>
         <p><b>Tips:</b> paths make farmhands faster. Put storage crates near far-off fields. Wells and sprinklers make crops grow faster. Rain waters everything for free. Flowers near beehives make more honey. Expand out to the stream or pond and build a Fishing Dock to catch fish.</p>
+        <p><b>Materials:</b> buildings need wood and stone, and better ones need copper, iron and gold ore. Farmhands clear fallen branches and rocks on your land for a little. For lots more, buy land at the edge of the map, follow the trail sign to the quarry and hire Miners. New buildings take a while to go up, and idle farmhands help.</p>
+        <p><b>The village:</b> neighbours post orders on the notice board. Fill them to make friends (each heart brings a gift). Restore the village buildings for lasting bonuses; fixing the old bridge brings a travelling merchant every couple of days.</p>
         <p><b>Long-term:</b> the Journal tracks goals, tiered achievements (some unlock hats for your farmhands) and a collection book of every good on the farm.</p>
         <p><b>Install on your phone:</b> on iPhone open this page in Safari, tap Share, then "Add to Home Screen". On Android tap the menu, then "Install app".</p></div>`;
     }
@@ -695,6 +836,7 @@ export class UI {
       <div class="cb">${c.body || ''}</div>${c.btns ? `<div class="cbtn">${c.btns}</div>` : ''}`;
     el.classList.add('open');
     this.cardLive = c.live;
+    this.updateNeeds(el);
   }
   liveCard() {
     if (!this.sel) return;
@@ -706,7 +848,7 @@ export class UI {
       const n = el.querySelector(`[data-live="${k}"]`);
       if (n && n._v !== vals[k]) { n.innerHTML = vals[k]; n._v = vals[k]; }
     }
-    for (const b of el.querySelectorAll('[data-need]')) b.disabled = this.s.coins < +b.dataset.need;
+    this.updateNeeds(el);
   }
 
   exists(o) { return o.role ? this.s.workers.includes(o) : o.kind && PETS[o.kind] ? this.s.pets.includes(o) : this.w.byId.has(o.id); }
@@ -749,11 +891,25 @@ export class UI {
     const w = this.w, s = this.s, d = DEFS[o.type];
     const moveBtn = d.fixed && d.cat !== 'special' && d.cat !== 'house' ? '' : `<button class="btn small" data-act="move">${img('move')} Move</button>`;
     const rmBtn = d.fixed ? '' : `<button class="btn small" data-act="remove">${img('trash')} Remove</button>`;
+    const um = d.upg && o.lvl < d.maxLvl ? upgMatsFor(o) : null;
     const upBtn = d.upg ? (o.lvl >= d.maxLvl ? '<span class="max">MAX LEVEL</span>'
-      : `<button class="btn small green" data-act="upgradeb" data-need="${E.bUpgradeCost(o)}">${img('up')} Upgrade ${coin(E.bUpgradeCost(o))}</button>`) : '';
+      : `<button class="btn small green" data-act="upgradeb" ${needAttr(E.bUpgradeCost(o), um)}>${img('up')} Upgrade ${coin(E.bUpgradeCost(o))}${um ? `<span class="bmats">${matsHTML(um, w)}</span>` : ''}</button>`) : '';
     const lvl = o.lvl ? ` <span class="lv">Lv ${o.lvl}${d.maxLvl ? `/${d.maxLvl}` : ''}</span>` : '';
     const power = `<div class="row power ${o.off ? 'off' : ''}"><span><b>${o.off ? 'Switched off' : 'Working'}</b></span><button class="btn small ${o.off ? 'green' : ''}" data-act="toggleoff">${o.off ? 'Turn on' : 'Turn off'}</button></div>`;
     const base = { icon: `<img class="thumb" src="${thumb(o.type, o.crop)}" alt="">`, title: d.name + lvl, btns: upBtn + moveBtn + rmBtn };
+    if (o.build > 0) {
+      const info = () => ({ st: `Going up: ${fmtTime(o.build)} left${o._cb ? ' · a farmhand is helping' : ''}`, pb: `<i style="width:${(1 - o.build / (o.buildT || o.build)) * 100}%"></i>` });
+      const v = info();
+      return { ...base, title: d.name, sub: 'Under construction',
+        body: `<div class="status" data-live="st">${v.st}</div><div class="bar" data-live="pb">${v.pb}</div>
+          <p class="hint">It starts working once it's finished. Any farmhand with nothing else to do will come and help, which speeds it up. It keeps building while you're away. Removing it now gives back everything you paid.</p>`,
+        btns: moveBtn + rmBtn, live: info };
+    }
+    if (d.cat === 'debris') {
+      return { ...base, title: d.name, sub: `Gives ${E.matsText(d.gives)}`,
+        body: `<p class="hint">${esc(d.desc)} A farmhand will clear it when they have a moment, or you can clear it yourself now.</p>`,
+        btns: `<button class="btn small green" data-act="cleardebris">${img('trash')} Clear it ${matsHTML(d.gives)}</button>` };
+    }
     if (o.type === 'plot' && !o.crop) return this.bareCard(o, base, moveBtn, rmBtn);
     if (o.type === 'plot') {
       const cr = CROPS[o.crop];
@@ -891,6 +1047,14 @@ export class UI {
   itemInfo(k) {
     const it = ITEMS[k], cr = CROPS[k], w = this.w, s = this.s;
     if (!it) return;
+    if (it.mat) {
+      const where = k === 'wood' || k === 'stone' ? 'Clearing branches and rocks on your farm, and from the quarry' : k === 'gem' ? 'A lucky find while mining iron and gold veins' : `Mining ${ITEMS[k].name.toLowerCase()} veins deeper in the quarry`;
+      const html = `<h2>${itemImg(k, 'pi big')} ${it.name}</h2><div class="facts"><span>Building material</span><span>You have ${fmt(w.mat(k))}/${fmt(w.shedCap)}</span><span>Sells for ${coin(it.value)}</span></div>
+        <p class="hint">Comes from: ${where}.</p><p class="hint">Used to put up buildings and upgrade them. It's kept in the material shed, not the barn.</p>`;
+      const m = { html, buttons: [['Close', 'ok']], info: true };
+      if (this.modalOpen?.info) { this.modalQ.unshift(m); this.nextModal(); } else { this.modalQ.push(m); if (!this.modalOpen) this.nextModal(); }
+      return;
+    }
     const facts = [`Sells for ${coin(sellPrice(w, k))}`, w.haveAll(k) ? `You have ${fmt(w.haveAll(k))}` : ''];
     if (cr) facts.push(`${img('clock')} ${fmtTime(cr.time)} to grow`, `${cr.yield} per harvest`, `Seeds ${cr.seed ? coin(cr.seed) : 'free'}`,
       cr.regrow ? 'Regrows after picking' : '', cr.season ? `${SEASONS.find((x) => x.id === cr.season).name} only` : '');
@@ -1015,7 +1179,7 @@ export class UI {
     }
     if (el._h !== html) { el.innerHTML = html; el._h = html; }
     if (!liveOnly) el.classList.add('open');
-    for (const b of el.querySelectorAll('[data-need]')) b.disabled = this.s.coins < +b.dataset.need;
+    this.updateNeeds(el);
   }
 
   tileAt(sx, sy) {
@@ -1031,7 +1195,52 @@ export class UI {
     return o && DEFS[o.type].cat === 'path' ? o : null;
   }
 
+  // ---------- the quarry scene ----------
+  inQuarry() { return this.g.R.scene === 'quarry'; }
+  goQuarry() {
+    if (!this.s.quarry) {
+      const why = E.discoverQuarry(this.w);
+      if (why) { this.toast(why, 'bad'); return; }
+    }
+    if (this.mode) this.setMode(null);
+    if (this.sel) this.select(null, true);
+    this.g.R.setScene('quarry');
+    document.body.classList.add('inquarry');
+    this.renderScenebar();
+  }
+  goFarm() {
+    if (!this.inQuarry()) return;
+    if (this.sel) this.select(null, true);
+    this.g.R.setScene('farm');
+    document.body.classList.remove('inquarry');
+    this.renderScenebar();
+  }
+  renderScenebar() {
+    const el = $('#scenebar');
+    if (!this.inQuarry()) { el.classList.remove('open'); el.innerHTML = ''; return; }
+    const miners = this.s.workers.filter((x) => x.role === 'miner').length;
+    el.innerHTML = `${img('pick', 'pi big')}<div class="pt"><b>The Quarry</b><small data-live="qs">${this.quarryStatus(miners)}</small></div>
+      <button class="btn small" data-act="sheet" data-v="quarry">${itemImg('stone')} Shed</button><button class="btn small green" data-act="gofarm">Back to farm</button>`;
+    el.classList.add('open');
+  }
+  quarryStatus(miners) {
+    if (!miners) return 'No miners yet: hire one in Farmhands';
+    return MATS.filter((k) => this.w.mat(k) || k === 'wood' || k === 'stone').map((k) => `${itemImg(k)}${fmt(this.w.mat(k))}`).join(' ');
+  }
+  tapQuarry(sx, sy) {
+    const hit = this.g.R.pick(sx, sy);
+    if (!hit) { if (this.sheet) this.openSheet(null); else if (this.sel) this.select(null); return; }
+    if (hit.role) { this.select(hit === this.sel ? null : hit); return; }
+    if (hit.qback) { this.goFarm(); return; }
+    if (hit.qcart || hit.qzone !== undefined) { this.openSheet('quarry'); return; }
+    if (hit.qnode) {
+      const n = hit.qnode, K = QNODES[n.k];
+      this.toast(n.hp > 0 ? `${K.name}: ${n.hp} more ${ITEMS[K.item].name.toLowerCase()} before it needs to grow back` : `${K.name}: grows back in ${fmtTime(n.re ?? K.regrow)}`);
+    }
+  }
+
   tap(sx, sy) {
+    if (this.inQuarry()) { this.tapQuarry(sx, sy); return; }
     const m = this.mode, w = this.w;
     if (m) {
       const [tx, ty] = this.tileAt(sx, sy);
@@ -1056,6 +1265,7 @@ export class UI {
       }
     }
     const hit = this.pickAt(sx, sy);
+    if (hit && hit.trail) { this.goQuarry(); return; }
     if (hit && !hit.role && hit.type === 'market') { this.select(null, true); this.openSheet('market'); return; }
     if (hit && !hit.role && hit.type === 'board') { this.select(null, true); this.openSheet('orders'); return; }
     if (this.sheet && !hit) { this.openSheet(null); return; }
@@ -1100,8 +1310,8 @@ export class UI {
       const o = w.objAt(tx, ty);
       if (!o) return;
       const d = DEFS[o.type];
-      if (single || ['path', 'fence', 'field'].includes(d.cat) || (d.cat === 'decor' && d.w === 1)) {
-        if (!single && !['path', 'fence', 'field', 'decor'].includes(d.cat)) return;
+      if (single || ['path', 'fence', 'field', 'debris'].includes(d.cat) || (d.cat === 'decor' && d.w === 1)) {
+        if (!single && !['path', 'fence', 'field', 'decor', 'debris'].includes(d.cat)) return;
         if (single) { this.askRemove(o); return; }
         const why = E.remove(w, o);
         if (!why) this.g.dirty();
@@ -1146,7 +1356,17 @@ export class UI {
   // ---------- events from the simulation ----------
   handle(e) {
     const R = this.g.R;
-    if (e.t === 'float') R.float(e.x, e.y, e.text, e.item);
+    if (e.t === 'float') { if (!this.inQuarry()) R.float(e.x, e.y, e.text, e.item); }
+    else if (e.t === 'qhit') { if (this.inQuarry()) R.float(e.n.x, e.n.y - 1, '+1', e.item); }
+    else if (e.t === 'built') this.toast(`The ${DEFS[e.o.type].name} is finished!`, 'good');
+    else if (e.t === 'quarry') this.toast('You found the quarry! Hire a miner to dig for wood, stone and ore.', 'good');
+    else if (e.t === 'zone') this.toast(`${QZONES[e.i].name} is open for mining!`, 'good');
+    else if (e.t === 'gem') this.toast('A miner found a gemstone!', 'good');
+    else if (e.t === 'heart') { const v = VILLAGERS.find((x) => x.id === e.who), g = e.gift; this.toast(`${v.name}: ${e.h} heart${e.h > 1 ? 's' : ''}! ${g.coins ? `+${fmt(g.coins)} coins` : g.ribbons ? `+${g.ribbons} ribbons` : g.hat ? `New hat: ${HATS[g.hat].name}` : v.perkText}`, 'good'); }
+    else if (e.t === 'project') this.toast(`${PROJECTS.find((p) => p.id === e.id).name} restored! ${PROJECTS.find((p) => p.id === e.id).text}`, 'good');
+    else if (e.t === 'giantgrew') this.toast(`A giant ${ITEMS[e.crop].name.toLowerCase()} grew on your farm!`, 'good');
+    else if (e.t === 'giant') { if (!this.inQuarry()) R.float(e.x + 1, e.y, 'GIANT!', e.crop); }
+    else if (e.t === 'debris') { if (!this.debrisTold) { this.debrisTold = true; this.toast(`A ${DEFS[e.type].name.toLowerCase()} turned up on your land. Farmhands will clear it for materials.`); } }
     else if (e.t === 'splash') R.splash(e.x, e.y);
     else if (e.t === 'level') this.levelUp(e.level, e.reward);
     else if (e.t === 'wlevel') this.toast(`${e.w.name} reached level ${e.w.lvl}!`, 'good');
@@ -1207,9 +1427,11 @@ export class UI {
       ${h ? `<h3>Gathered</h3><div class="oi">${rows(sum.harvest)}</div>` : ''}
       ${c ? `<h3>Crafted</h3><div class="oi">${rows(sum.craft)}</div>` : ''}
       ${so ? `<h3>Auto-sold</h3><div class="oi">${rows(sum.sold)}</div>` : ''}
+      ${sum.mats && Object.keys(sum.mats).length ? `<h3>Materials</h3><div class="oi">${rows(sum.mats)}</div>` : ''}
+      ${sum.built ? `<p>${img('hammer')} ${sum.built} building${sum.built > 1 ? 's' : ''} finished going up.</p>` : ''}
       ${sum.levels ? `<p>${img('star')} The farm reached level <b>${this.s.level}</b>!</p>` : ''}
       ${sum.newOrders ? `<p>${img('scroll')} ${sum.newOrders} new order${sum.newOrders > 1 ? 's' : ''} on the notice board.</p>` : ''}
-      ${!h && !c ? '<p class="hint">Not much happened. Make sure storage has room and fields have crops.</p>' : ''}
+      ${!h && !c && !(sum.mats && Object.keys(sum.mats).length) ? '<p class="hint">Not much happened. Make sure storage has room and fields have crops.</p>' : ''}
       ${pending ? `<div class="earned">${img('coin', 'pi big')} <b>${fmt(pending)}</b> coins waiting</div>` : ''}</div>`,
     [[pending ? `Collect ${fmt(pending)}` : 'Back to the farm', 'collect', 'gold']], () => {
       const n = E.collectPending(this.w);

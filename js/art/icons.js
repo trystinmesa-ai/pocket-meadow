@@ -12,6 +12,7 @@ const I = {
   heart: (P) => { P.r(1, 1, 4, 5, C.pink); P.r(7, 1, 4, 5, C.pink); P.r(0, 2, 12, 4, C.pink); P.r(1, 6, 10, 2, C.pink); P.r(3, 8, 6, 2, C.pink); P.r(5, 10, 2, 1, C.pink); P.px(2, 2, '#ffe0ec'); P.px(3, 2, '#ffe0ec'); },
   people: (P) => { P.oval(1, 0, 5, 5, '#f2c9a0'); P.r(0, 5, 7, 6, C.blue); P.oval(6, 2, 5, 5, '#d9a27a'); P.r(5, 7, 7, 5, C.red); P.hl(1, 0, 5, '#6b4226'); P.hl(6, 2, 5, '#e0b25a'); },
   hammer: (P) => { P.line(2, 11, 8, 5, C.woodL); P.line(3, 11, 9, 5, C.woodD); P.r(5, 0, 7, 4, C.stone); P.r(5, 0, 7, 1, C.stoneL); P.r(8, 4, 2, 2, C.stoneD); },
+  pick: (P) => { P.line(2, 11, 8, 4, C.woodL); P.line(3, 11, 9, 4, C.woodD); P.line(1, 3, 6, 0, C.stoneD); P.line(6, 0, 11, 4, C.stoneD); P.px(1, 4, C.stoneL); P.px(11, 5, C.stoneL); },
   scroll: (P) => { P.r(1, 1, 10, 10, C.cream); P.r(0, 0, 12, 2, C.creamD); P.r(0, 10, 12, 2, C.creamD); P.hl(3, 4, 6, C.woodD); P.hl(3, 6, 5, C.woodD); P.hl(3, 8, 6, C.woodD); },
   up: (P) => { P.r(4, 5, 4, 7, C.leaf); P.r(2, 4, 8, 2, C.leaf); P.r(3, 2, 6, 2, C.leaf); P.r(5, 0, 2, 2, C.leaf); P.vl(4, 5, 7, C.leafL); },
   map: (P) => { P.r(0, 1, 12, 10, '#e8d8a8'); P.vl(4, 1, 10, '#c9b47a'); P.vl(8, 1, 10, '#c9b47a'); P.r(1, 3, 3, 3, C.leaf); P.r(9, 6, 2, 3, C.water); P.px(6, 5, C.red); P.px(5, 4, C.red); P.px(7, 4, C.red); P.px(6, 6, C.red); },

@@ -1,7 +1,7 @@
 // Game state: creating a new farm, indexes for fast lookups, inventory,
 // placement rules and the derived effects of upgrades.
 import { BUNDLE_ROOMS, MAP, DEFS, ITEMS, CROPS, START_PARCELS, SAVE_VERSION, UPGRADES, CHARM_BONUS_PER, CHARM_BONUS_MAX,
-  BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES } from './data.js';
+  BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES, QUARRY, shedCap, VILLAGERS, PROJECTS, PERKS, HEARTS, ORDER_SLOTS, GOLD_BASE } from './data.js';
 
 export const PW = MAP.w / MAP.parcel;
 export const PH = MAP.h / MAP.parcel;
@@ -41,9 +41,11 @@ export function newWorker(state, role, name) {
   const used = new Set(state.workers.map((w) => w.name));
   name ||= WORKER_NAMES.find((n) => !used.has(n)) || `Hand ${state.workers.length + 1}`;
   const house = state.objects.find((o) => o.type === 'farmhouse');
+  // miners live and work in the quarry, so they start by its cart
+  const [mx, my] = QUARRY.cart;
   const w = {
     id: state.nextId++, name, role, lvl: 1, xp: 0, look: randomLook(),
-    x: house ? house.x + 1.5 : 24, y: house ? house.y + 3.5 : 20, carry: null,
+    x: role === 'miner' ? mx + 1.5 : house ? house.x + 1.5 : 24, y: role === 'miner' ? my + 0.5 : house ? house.y + 3.5 : 20, carry: null,
   };
   state.workers.push(w);
   return w;
@@ -61,6 +63,8 @@ export function newGame(now = Date.now()) {
     seeds: { wheat: true, carrot: true },
     upgrades: {}, orders: [], nextOrderAt: now + 90 * 1000,
     goal: 0, ach: {}, hats: {}, pets: [], ribbons: 0, fest: null, bundles: { give: {}, done: {} },
+    mats: { wood: 6, stone: 4 }, shed: 1, quarry: null,
+    friends: {}, village: { give: {}, done: {} }, gold: {}, perks: {},
     stats: { earned: 0, soldCoins: 0, harvest: {}, craft: {}, sold: {}, orders: 0, play: 0 },
     settings: { grid: false, helpers: true, motion: true },
     nextId: 1,
@@ -76,6 +80,8 @@ export function newGame(now = Date.now()) {
   add('path_dirt', 27, 18);
   add('flowers_red', 16, 19); add('flowers_yellow', 16, 20); add('oak', 31, 22); add('bush', 25, 23); add('fence_wood', 26, 21);
   add('fence_wood', 27, 21); add('fence_wood', 28, 21); add('haybale', 29, 22);
+  // a little debris to clear for the first building materials
+  add('rubble_log', 20, 22); add('rubble_rock', 24, 22); add('rubble_log', 30, 20);
   // no farmhands or fields yet: the player hires and plants their own
   return s;
 }
@@ -101,6 +107,14 @@ export function migrate(s) {
   s.settings = { grid: false, helpers: true, motion: true, ...(s.settings || {}) };
   s.piles ||= []; s.orders ||= []; s.autoSell ||= {}; s.upgrades ||= {}; s.seeds ||= { wheat: true, carrot: true };
   s.pendingCoins ||= 0; s.goal ||= 0; s.rev ||= 0;
+  // materials arrived after some farms were already built up: give those a head start
+  if (!s.mats) {
+    const built = s.objects.filter((o) => DEFS[o.type] && ['craft', 'animal'].includes(DEFS[o.type].cat)).length;
+    s.mats = { wood: Math.min(shedCap(1), 10 + built * 12), stone: Math.min(shedCap(1), 8 + built * 10) };
+  }
+  s.shed ||= 1; s.quarry ??= null;
+  s.friends ||= {}; s.village ||= { give: {}, done: {} }; s.village.give ||= {}; s.village.done ||= {};
+  s.gold ||= {}; s.perks ||= {};
   s.objects = s.objects.filter((o) => DEFS[o.type]);
   s.objects.forEach(initObject);
   for (const w of s.workers) { w.lvl ||= 1; w.xp ||= 0; if (w.carry && !ITEMS[w.carry.item]) w.carry = null; }
@@ -125,7 +139,7 @@ export class World {
     this.occ.fill(0);
     this.byId = new Map();
     this.plots = []; this.trees = []; this.bldgs = []; this.storages = []; this.wells = []; this.sprinklers = [];
-    this.animals = []; this.hives = []; this.lights = [];
+    this.animals = []; this.hives = []; this.lights = []; this.sites = []; this.debris = [];
     this.doors = new Set();
     this.housing = 0; this.capacity = 0; this.charm = 0;
     const flowers = [];
@@ -133,6 +147,10 @@ export class World {
       const d = DEFS[o.type];
       this.byId.set(o.id, o);
       for (let y = o.y; y < o.y + d.h; y++) for (let x = o.x; x < o.x + d.w; x++) if (inMap(x, y)) this.occ[idx(x, y)] = o.id;
+      if (d.door) this.doors.add(idx(...doorTile(o)));
+      // a building still going up does nothing yet, but keeps its entrance clear
+      if (o.build > 0) { this.sites.push(o); continue; }
+      if (d.cat === 'debris') { this.debris.push(o); continue; }
       if (o.type === 'plot') { this.plots.push(o); if (BEE_FLOWERS.has(o.crop)) flowers.push(o); }
       else if (d.cat === 'tree') this.trees.push(o);
       if (d.recipes) this.bldgs.push(o);
@@ -145,9 +163,9 @@ export class World {
       if (d.charm) this.charm += d.charm;
       if (d.flower) flowers.push(o);
       if (d.light) this.lights.push(o);
-      if (d.door) this.doors.add(idx(...doorTile(o)));
     }
     this.charm += 5 * (s.pets || []).length; // pets make a farm feel loved
+    this.charm += farmPerks(s).charm; // friends and village projects
     // beehive flower bonus
     for (const h of this.hives) {
       let n = 0;
@@ -214,6 +232,20 @@ export class World {
     return got;
   }
 
+  // ---------- building materials (the material shed) ----------
+  get shedCap() { return shedCap(this.state.shed || 1); }
+  mat(k) { return this.state.mats[k] || 0; }
+  /** Add materials up to the shed's limit; returns how many fit. */
+  addMat(k, n) {
+    const put = Math.max(0, Math.min(n, this.shedCap - this.mat(k)));
+    if (put > 0) this.state.mats[k] = this.mat(k) + put;
+    return put;
+  }
+  hasMats(m) { for (const k in m || {}) if (this.mat(k) < m[k]) return false; return true; }
+  takeMats(m) { for (const k in m || {}) { this.state.mats[k] = this.mat(k) - m[k]; if (!this.state.mats[k]) delete this.state.mats[k]; } }
+  /** Give materials back even past the limit (refunds should never be lost). */
+  refundMats(m) { for (const k in m || {}) this.state.mats[k] = this.mat(k) + m[k]; }
+
   count(type) { let n = 0; for (const o of this.state.objects) if (o.type === type) n++; return n; }
 
   // ---------- placement ----------
@@ -261,22 +293,41 @@ export function doorTile(o) {
 
 export const ulvl = (s, id) => s.upgrades[id] || 0;
 
+/**
+ * Lasting bonuses from finished bundle shelves, best friends (five hearts),
+ * restored village buildings and the merchant's one-off wares.
+ */
+export function farmPerks(s) {
+  const p = { grow: 0, craft: 0, animal: 0, sell: 0, walk: 0, xp: 0, orderPay: 0, offlineH: 0, ribbonMul: 0, orderSlot: 0, charm: 0, gold: 0, mine: 0, carry: 0, merchant: 0 };
+  const add = (m) => { for (const k in m) if (k in p) p[k] += m[k]; };
+  for (const r of BUNDLE_ROOMS) if (s.bundles?.done[`room:${r.id}`]) add(r.perk);
+  for (const v of VILLAGERS) if ((s.friends?.[v.id] || 0) >= HEARTS[HEARTS.length - 1]) add(v.perk);
+  for (const pr of PROJECTS) if (s.village?.done[pr.id]) add(pr.reward);
+  for (const id in s.perks || {}) if (PERKS[id]) add(PERKS[id].fx);
+  return p;
+}
+
 export function effects(s, w) {
   const u = (id) => ulvl(s, id);
-  // finished bundle shelves add small lasting bonuses
-  const perk = { grow: 0, craft: 0, animal: 0, sell: 0 };
-  for (const r of BUNDLE_ROOMS) if (s.bundles?.done[`room:${r.id}`]) for (const k in r.perk) perk[k] += r.perk[k];
+  const perk = farmPerks(s);
   return {
     grow: 1 + 0.1 * u('grow') + perk.grow,
-    walk: 1 + 0.08 * u('boots'),
-    carry: 3 + u('basket'),
+    walk: 1 + 0.08 * u('boots') + perk.walk,
+    carry: 3 + u('basket') + perk.carry,
     work: 1 + 0.1 * u('tools'),
     water: 1.4 + 0.1 * u('water'),
     sell: (1 + 0.05 * u('haggle') + perk.sell) * (1 + (w ? w.charmBonus() : 0)),
     animal: 1 + 0.12 * u('animal') + perk.animal,
     craft: 1 + 0.1 * u('craft') + perk.craft,
     bumper: 0.08 * u('bumper'),
-    offlineH: 8 + 2 * u('night'),
+    offlineH: 8 + 2 * u('night') + perk.offlineH,
+    xp: 1 + perk.xp,
+    orderPay: 1 + perk.orderPay,
+    ribbons: 1 + perk.ribbonMul,
+    orderSlots: ORDER_SLOTS + perk.orderSlot,
+    gold: GOLD_BASE + perk.gold,
+    mine: 1 + perk.mine,
+    merchant: perk.merchant > 0,
   };
 }
 

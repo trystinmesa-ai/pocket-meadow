@@ -36,7 +36,7 @@ img.thumb.sm { width: 34px; height: 34px; }
 img.ava { width: 36px; height: 48px; image-rendering: pixelated; object-fit: contain; }
 
 /* chunky pixel panels */
-.panel, #hud .res, #goal, .toast, #card, #placebar, #sheet, .mbox, #dock {
+.panel, #hud .res, #goal, .toast, #card, #placebar, #scenebar, #sheet, .mbox, #dock {
   background: var(--paper);
   border: 3px solid var(--ink);
   border-radius: 6px;
@@ -284,3 +284,33 @@ body.placing #goal { display: none; }
 .power { margin: 0 0 4px; }
 .power.off b { color: #a8432f; }
 .inb { color: var(--ink2, #7a6a55); font-size: 0.85em; }
+/* quarry & materials */
+#scenebar { position: fixed; z-index: 6; left: 50%; bottom: calc(var(--safe-b) + 70px); width: min(440px, calc(100% - 12px)); padding: 6px 8px; display: flex; align-items: center; gap: 8px; transform: translate(-50%, calc(100% + 120px)); transition: transform .2s; }
+#scenebar.open { transform: translate(-50%, 0); }
+#scenebar .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#scenebar .pt small { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; color: var(--ink2); font-size: 12px; }
+#scenebar .pt small .pi { width: 12px; height: 12px; }
+body.inquarry #goal, body.inquarry #card.open ~ #scenebar { display: none; }
+.mat { display: inline-flex; align-items: center; gap: 1px; font-weight: 700; font-size: 12px; margin-right: 6px; white-space: nowrap; }
+.mat .pi { width: 14px; height: 14px; }
+.mat.short { color: #b8322a; }
+.tmats { display: flex; flex-wrap: wrap; justify-content: center; margin: 2px 0; }
+.bmats { display: inline-flex; margin-left: 6px; }
+.bmats .mat { color: inherit; margin-right: 3px; }
+.bmats .mat.short { color: #ffd0c8; }
+.matrow { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 4px 0; }
+/* village: neighbours, projects, merchant */
+.hearts { display: inline-flex; gap: 1px; vertical-align: middle; }
+.ht { width: 9px; height: 8px; display: inline-block; background: #d8c8c0; clip-path: polygon(50% 100%, 0 40%, 0 15%, 25% 0, 50% 20%, 75% 0, 100% 15%, 100% 40%); }
+.ht.on { background: #e8507a; }
+.fav .pi { width: 10px; height: 10px; }
+.friend { background: var(--paper2); border: 1.5px solid var(--ink); border-radius: 5px; padding: 6px 8px; margin: 6px 0; }
+.friend .fh { display: flex; justify-content: space-between; align-items: center; }
+.friend .fd { font-size: 12px; color: var(--ink2); margin: 2px 0; }
+.friend .fl { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; font-size: 12px; }
+.friend .fn { font-size: 12px; margin-top: 3px; font-weight: 600; }
+.order.project .of { display: flex; align-items: center; gap: 6px; }
+.order.project.done { opacity: .75; }
+.order.project.locked { opacity: .6; }
+#hud .merchant { background: #fff0c8; animation: pulse 1.2s infinite alternate; }
+#hud .merchant[hidden] { display: none; }

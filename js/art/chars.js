@@ -7,6 +7,7 @@ const HATS = {
   cap: { c: '#4f7fd0', d: '#36589a' },
   bandana: { c: '#f4f0e6', d: '#d8d0c0', dot: '#d9534f' },
   wide: { c: '#8a5a32', d: '#6a3f22', band: '#3e2a1e' },
+  miner: { c: '#f0c030', d: '#b88a18', lamp: '#fff4b0' },
 };
 
 // Unlockable hats (drawn over the head; y = top of head - 2).
@@ -29,6 +30,10 @@ const FANCY = {
   sproutcap(P, dir, y) { P.r(3, y, 6, 4, '#6aae5a'); P.hl(3, y + 3, 6, '#4a8a3a'); P.vl(6, y - 3, 3, '#4a8a3a'); P.r(3, y - 4, 3, 2, '#8cd070'); P.r(7, y - 4, 3, 2, '#8cd070'); },
   knitcap(P, dir, y) { P.r(3, y, 6, 4, '#e8a030'); for (let x = 3; x < 9; x += 2) P.px(x, y + 1, '#f4d080'); P.hl(3, y + 3, 6, '#b07018'); P.r(5, y - 2, 2, 2, C.white); },
   wreath(P, dir, y) { P.hl(2, y + 2, 8, C.leafD); P.hl(3, y + 1, 6, C.leaf); for (const [x, c] of [[2, C.pink], [4, C.yellow], [7, C.orange], [9, '#a8e0ff']]) P.px(x, y + 1, c); },
+  bonnet(P, dir, y) { P.rr(2, y - 1, 8, 5, '#f4c8d8'); P.hl(2, y + 3, 8, '#d890a8'); P.r(1, y + 3, 2, 3, '#f4c8d8'); P.r(9, y + 3, 2, 3, '#f4c8d8'); P.px(8, y, C.yellow); P.px(7, y, C.pink); },
+  flatcap(P, dir, y) { P.r(3, y, 6, 3, '#8a7a5a'); P.hl(3, y, 6, '#a8987a'); if (dir === 'd') P.hl(2, y + 3, 8, '#5a4a32'); else if (dir === 'r') P.r(8, y + 2, 3, 1, '#5a4a32'); for (let x = 4; x < 9; x += 2) P.px(x, y + 1, '#6a5a3a'); },
+  feathercap(P, dir, y) { P.r(3, y, 6, 4, '#3a7a5a'); P.hl(3, y + 3, 6, '#2a5a42'); P.line(8, y, 11, y - 4, '#e84a4a'); P.line(9, y, 11, y - 3, '#ff8a6a'); P.px(5, y + 1, C.gold); },
+  starhat(P, dir, y) { P.r(4, y - 1, 4, 3, '#2a3a7a'); P.r(5, y - 3, 2, 2, '#2a3a7a'); P.px(6, y - 4, '#2a3a7a'); P.hl(1, y + 2, 10, '#2a3a7a'); P.hl(2, y + 3, 8, '#1a2a5a'); P.px(5, y, '#fff4b0'); P.px(6, y - 2, C.gold); P.px(3, y + 2, '#fff4b0'); P.px(9, y + 2, C.gold); },
   crown(P, dir, y) { P.r(3, y, 6, 3, C.gold); P.px(3, y - 1, C.gold); P.px(5, y - 1, C.gold); P.px(6, y - 1, C.gold); P.px(8, y - 1, C.gold); P.px(5, y + 1, C.red); P.hl(3, y + 2, 6, C.goldD); },
 };
 
@@ -47,6 +52,10 @@ function hat(P, kind, dir, b) {
     P.r(3, y + 1, 6, 3, h.c); P.hl(4, y + 1, 3, shade(h.c, 0.3)); P.px(6, y, h.d);
     if (dir === 'd') P.hl(2, y + 4, 8, h.d);
     else if (dir === 'r') P.r(8, y + 3, 3, 1, h.d);
+  } else if (kind === 'miner') {
+    P.rr(3, y, 6, 4, h.c); P.hl(4, y, 4, shade(h.c, 0.3)); P.hl(2, y + 3, 8, h.d);
+    if (dir === 'd') { P.r(5, y + 1, 2, 2, h.lamp); P.px(5, y + 1, '#ffffff'); }
+    else if (dir === 'r') P.r(8, y + 1, 2, 2, h.lamp);
   } else if (kind === 'bandana') {
     P.r(3, y + 1, 6, 2, h.c); P.hl(3, y + 3, 6, h.d); P.px(4, y + 1, h.dot); P.px(7, y + 2, h.dot);
     if (dir !== 'd') { P.px(dir === 'r' ? 2 : 9, y + 3, h.c); P.px(dir === 'r' ? 2 : 9, y + 4, h.d); }
@@ -144,6 +153,12 @@ const TOOLS = {
   sickle: [(P) => { P.vl(5, 5, 5, C.woodD); P.line(5, 5, 2, 1, C.stoneL); P.line(2, 1, 5, 0, C.stoneL); }, (P) => { P.hl(0, 7, 5, C.woodD); P.line(5, 7, 9, 4, C.stoneL); P.line(9, 4, 8, 1, C.stoneL); }],
   can: [(P) => { P.r(1, 3, 6, 5, '#5f9ad0'); P.hl(1, 3, 6, '#8ac0f0'); P.line(7, 4, 9, 2, '#5f9ad0'); P.r(2, 1, 3, 2, '#3f6a9a'); },
     (P) => { P.r(0, 2, 6, 5, '#5f9ad0'); P.hl(0, 2, 6, '#8ac0f0'); P.line(6, 5, 8, 7, '#5f9ad0'); P.px(9, 9, C.waterL); P.px(8, 11, C.waterL); P.px(10, 11, C.water); }],
+  axe: [(P) => { P.vl(3, 1, 10, C.woodL); P.r(0, 0, 4, 3, C.stoneD); P.vl(0, 0, 3, C.stoneL); },
+    (P) => { P.line(0, 4, 8, 10, C.woodL); P.r(7, 8, 4, 3, C.stoneD); P.hl(7, 10, 4, C.stoneL); }],
+  pick: [(P) => { P.vl(4, 1, 10, C.woodL); P.line(0, 2, 4, 0, C.stoneD); P.line(4, 0, 8, 2, C.stoneD); P.px(0, 3, C.stoneL); P.px(8, 3, C.stoneL); },
+    (P) => { P.line(0, 3, 8, 9, C.woodL); P.line(6, 11, 9, 7, C.stoneD); P.line(9, 7, 10, 11, C.stoneD); }],
+  hammer: [(P) => { P.vl(3, 3, 8, C.woodL); P.r(1, 0, 5, 3, C.stoneDD); P.hl(1, 0, 5, C.stoneD); },
+    (P) => { P.line(0, 4, 7, 9, C.woodL); P.r(6, 8, 3, 4, C.stoneDD); }],
   basket: [(P) => { P.rr(0, 2, 8, 5, '#c9944a'); P.hl(0, 2, 8, '#e0b06a'); P.line(1, 2, 4, 0, '#a8743a'); P.line(4, 0, 7, 2, '#a8743a'); },
     (P) => { P.rr(0, 3, 8, 5, '#c9944a'); P.hl(0, 3, 8, '#e0b06a'); P.line(1, 3, 4, 1, '#a8743a'); P.line(4, 1, 7, 3, '#a8743a'); }],
 };

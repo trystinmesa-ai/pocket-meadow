@@ -55,6 +55,7 @@ function snap(s) {
   return {
     coins: s.coins + s.pendingCoins, level: s.level, earned: s.stats.earned,
     harvest: { ...s.stats.harvest }, craft: { ...s.stats.craft }, sold: { ...s.stats.sold }, orders: s.orders.length,
+    mats: { ...(s.mats || {}) }, sites: s.objects.filter((o) => o.build > 0).length,
   };
 }
 const diff = (a, b) => {
@@ -99,5 +100,6 @@ export async function catchUp(world, ms, onProgress) {
     coins: Math.max(0, after.coins - before.coins),
     harvest: diff(before.harvest, after.harvest), craft: diff(before.craft, after.craft), sold: diff(before.sold, after.sold),
     levels: after.level - before.level, newOrders: Math.max(0, after.orders - before.orders), events,
+    mats: diff(before.mats, after.mats), built: Math.max(0, before.sites - after.sites),
   };
 }

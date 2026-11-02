@@ -130,6 +130,13 @@ export const ITEMS = {
   sunjuice:   { name: 'Sunberry Juice', value: 75, icon: { k: 'bottle', c: '#f4a020' } },
   cransauce:  { name: 'Cranberry Sauce', value: 85, icon: { k: 'jar', c: '#a01434', lid: '#d8a040' } },
   mintcandy:  { name: 'Frostmint Candy', value: 95, icon: { k: 'candy', c: '#8ad0c8' } },
+  // --- building materials (kept in the material shed, not the barn) ---
+  wood:       { name: 'Wood', value: 3, mat: true, icon: { k: 'log' } },
+  stone:      { name: 'Stone', value: 4, mat: true, icon: { k: 'stone' } },
+  copper:     { name: 'Copper Ore', value: 9, mat: true, icon: { k: 'ore', c: '#e0844a', c2: '#ffb878' } },
+  iron:       { name: 'Iron Ore', value: 15, mat: true, icon: { k: 'ore', c: '#9aa6b8', c2: '#d8e0ec' } },
+  gold:       { name: 'Gold Ore', value: 32, mat: true, icon: { k: 'ore', c: '#f4c542', c2: '#fff0a0' } },
+  gem:        { name: 'Gemstone', value: 140, mat: true, icon: { k: 'gem' } },
 };
 
 // ---------- Crops (planted on field plots) ----------
@@ -467,6 +474,16 @@ export const DEFS = {
   rowboat:     { name: 'Little Rowboat', cat: 'decor', w: 2, h: 1, level: 1, cost: 0, unique: true, bundle: 'catch', charm: 35 },
   meadowbell:  { name: 'Meadow Bell', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'room:seasons', charm: 60, tall: true },
   goldscarecrow:{ name: 'Golden Scarecrow', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'all', charm: 120, light: 1 },
+
+  // debris that turns up on open land; farmhands clear it for materials
+  // only sold by the travelling merchant
+  geode:       { name: 'Crystal Geode', cat: 'decor', w: 1, h: 1, level: 1, cost: 12000, merchant: true, charm: 30 },
+  starlamp:    { name: 'Star Lantern', cat: 'decor', w: 1, h: 1, level: 1, cost: 18000, merchant: true, charm: 35, light: 1, tall: true },
+  rug:         { name: 'Woven Rug', cat: 'decor', w: 2, h: 1, walk: true, level: 1, cost: 9000, merchant: true, charm: 25 },
+
+  rubble_log:  { name: 'Fallen Branch', cat: 'debris', w: 1, h: 1, level: 1, cost: 0, gives: { wood: 3 }, desc: 'Blown down in the night. Clear it for wood.' },
+  rubble_rock: { name: 'Loose Rock', cat: 'debris', w: 1, h: 1, level: 1, cost: 0, gives: { stone: 3 }, desc: 'Turned up by the plough. Clear it for stone.' },
+  rubble_ore:  { name: 'Copper Rock', cat: 'debris', w: 1, h: 1, level: 6, cost: 0, gives: { copper: 2, stone: 1 }, desc: 'A rock with green-orange streaks. Clear it for copper ore.' },
 };
 
 for (const [id, d] of Object.entries(DEFS)) {
@@ -507,6 +524,68 @@ for (const [id, c] of Object.entries(CROPS)) {
   c.time = Math.max(30, Math.round(t / 5) * 5);
 }
 
+// ---------- Materials & construction ----------
+// Buildings need wood and stone; better ones need copper, iron and gold ore
+// from deeper in the quarry. New buildings take a while to put up, and any
+// farmhand with nothing better to do lends a hand.
+export const MATS = ['wood', 'stone', 'copper', 'iron', 'gold', 'gem'];
+const MAT_CATS = new Set(['craft', 'animal', 'storage', 'house', 'utility']);
+const baseCost = (d) => (typeof d.cost === 'function' ? d.cost(0) : d.cost);
+const roundMats = (m, k = 1) => { const o = {}; for (const i in m) o[i] = Math.max(1, Math.round(m[i] * k)); return o; };
+export const needsBuilding = (type) => MAT_CATS.has(DEFS[type].cat) && !DEFS[type].fixed;
+/** Materials to build one more of a type (n = how many you already own). */
+export function matsFor(type, n = 0) {
+  const d = DEFS[type];
+  if (!needsBuilding(type)) return null;
+  const a = 3 + Math.sqrt(baseCost(d)) / 2.5;
+  const m = { wood: a, stone: a * 0.7 };
+  if (d.level >= 6) m.copper = a * 0.35;
+  if (d.level >= 10) m.iron = a * 0.3;
+  if (d.level >= 15) m.gold = a * 0.2;
+  return roundMats(m, Math.pow(1.2, n));
+}
+/** Materials for a building's next upgrade. Storage stays on wood and stone a level longer. */
+export function upgMatsFor(o) {
+  const d = DEFS[o.type];
+  if (!d.upg) return null;
+  const L = (o.lvl || 1) + 1 - (d.cat === 'storage' ? 1 : 0);
+  const a = (2 + Math.sqrt(d.upg) / 3) * ((o.lvl || 1));
+  const m = { wood: a, stone: a };
+  if (L >= 3) m.copper = a * 0.4;
+  if (L >= 4) m.iron = a * 0.35;
+  if (L >= 5) m.gold = a * 0.25;
+  return roundMats(m);
+}
+/** Seconds to put up a building that cost this many coins. */
+export const buildTime = (type, cost) => (needsBuilding(type) ? Math.round(Math.min(3 * 3600, Math.max(20, 14 * Math.pow(Math.max(1, cost), 0.55)))) : 0);
+
+// The material shed holds up to this many of each material.
+export const SHED_MAX = 8;
+export const shedCap = (l = 1) => Math.round(60 * Math.pow(1.6, l - 1));
+export const shedCost = (l) => ({ coins: Math.round(400 * Math.pow(2.1, l - 1)), mats: { wood: 15 * l, stone: 15 * l } });
+
+// Debris turns up on open land now and then, up to a few pieces at a time.
+export const DEBRIS_EVERY = 4 * 60;
+export const debrisMax = (parcels) => 3 + Math.floor(parcels / 2);
+
+// ---------- Quarry ----------
+// Reached by a trail from any land you own along the edge of the map. Miners
+// work here; deeper zones open with farm level, coins and materials.
+export const QUARRY = { w: 38, h: 18, road: 9, cart: [2, 9] };
+export const QZONES = [
+  { name: 'Woodland Edge', x0: 4, x1: 11, level: 1, cost: 0, mats: null, nodes: { tree: 7, rock: 7 } },
+  { name: 'Copper Hollow', x0: 13, x1: 20, level: 6, cost: 6000, mats: { wood: 40, stone: 40 }, nodes: { rock: 4, copper: 7, tree: 2 } },
+  { name: 'Iron Ridge', x0: 22, x1: 28, level: 10, cost: 30000, mats: { wood: 120, stone: 120, copper: 60 }, nodes: { rock: 3, iron: 7 } },
+  { name: 'Gold Seam', x0: 30, x1: 36, level: 15, cost: 120000, mats: { stone: 300, copper: 120, iron: 100 }, nodes: { iron: 2, gold: 6 } },
+];
+export const QNODES = {
+  tree:   { name: 'Pine Tree', item: 'wood', hp: 4, time: 5, regrow: 600 },
+  rock:   { name: 'Boulder', item: 'stone', hp: 4, time: 6, regrow: 540 },
+  copper: { name: 'Copper Vein', item: 'copper', hp: 3, time: 8, regrow: 900 },
+  iron:   { name: 'Iron Vein', item: 'iron', hp: 3, time: 10, regrow: 1200, gem: 0.03 },
+  gold:   { name: 'Gold Vein', item: 'gold', hp: 2, time: 13, regrow: 1800, gem: 0.06 },
+};
+
 export const BUILD_TABS = [
   { id: 'field', name: 'Fields', cats: ['field', 'tree'] },
   { id: 'build', name: 'Buildings', cats: ['craft', 'animal', 'storage', 'house', 'utility'] },
@@ -521,8 +600,9 @@ export const ROLES = {
   hauler:  { name: 'Hauler', desc: 'Carries harvests to storage and supplies buildings.', tasks: ['haulPile', 'collect', 'supply', 'feed'], hat: 'cap' },
   artisan: { name: 'Artisan', desc: 'Runs the mill, bakery and other workshops.', tasks: ['operate', 'supply', 'collect'], hat: 'bandana' },
   rancher: { name: 'Rancher', desc: 'Feeds animals and gathers eggs, milk, wool and honey.', tasks: ['feed', 'collectAnimal', 'pickTree', 'haulPile'], hat: 'wide' },
+  miner:   { name: 'Miner', desc: 'Works in the quarry: chops trees and mines stone and ore for the material shed.', tasks: [], hat: 'miner', quarry: true },
 };
-export const ROLE_ORDER = ['farmer', 'hauler', 'artisan', 'rancher'];
+export const ROLE_ORDER = ['farmer', 'hauler', 'artisan', 'rancher', 'miner'];
 
 // Hats farmhands can wear. Unlocked through achievements (ach) or bought (cost).
 export const HATS = {
@@ -545,6 +625,10 @@ export const HATS = {
   sproutcap:   { name: 'Sprout Cap', bundle: 'berries' },
   knitcap:     { name: 'Knitted Cap', bundle: 'woolhoney' },
   wreath:      { name: 'Four Seasons Wreath', bundle: 'room:seasons' },
+  bonnet:      { name: 'Sunday Bonnet', villager: 'elm' },
+  flatcap:     { name: 'Tweed Flat Cap', villager: 'barnaby' },
+  feathercap:  { name: 'Feathered Cap', merchant: true, cost: 15000 },
+  starhat:     { name: 'Starry Hat', merchant: true, cost: 35000 },
 };
 
 // ---------- Seasons & festivals ----------
@@ -609,7 +693,7 @@ export const MAX_PETS = 4;
 export const petCost = (n) => Math.round(400 * Math.pow(3, n));
 export const PET_NAMES = ['Biscuit', 'Mochi', 'Pumpkin', 'Waffles', 'Pepper', 'Clover', 'Bean', 'Nutmeg', 'Toffee', 'Sprout', 'Maple', 'Pudding', 'Hazel', 'Pickle', 'Button', 'Juniper'];
 // Everything a farmhand can do when their own job has nothing waiting.
-export const ALL_TASKS = ['harvest', 'haulPile', 'plant', 'operate', 'supply', 'collect', 'feed', 'collectAnimal', 'pickTree', 'water'];
+export const ALL_TASKS = ['harvest', 'haulPile', 'plant', 'operate', 'supply', 'collect', 'feed', 'collectAnimal', 'pickTree', 'water', 'build', 'clear'];
 
 export const WORKER_NAMES = ['Pip', 'Bea', 'Tomo', 'Juniper', 'Odie', 'Marigold', 'Rook', 'Fern', 'Basil', 'Clover', 'Hazel', 'Milo',
   'Poppy', 'Sorrel', 'Wren', 'Otto', 'Daisy', 'Finch', 'Ivy', 'Bram', 'Lumi', 'Moss', 'Nettle', 'Quill', 'Rosa', 'Sage'];
@@ -636,16 +720,16 @@ export const UPGRADES = [
   { id: 'bumper', name: 'Bumper Crops',  desc: '+8% chance per level of an extra item each harvest.', max: 8, base: 1000, k: 2.0, level: 6, icon: 'star' },
   { id: 'night',  name: 'Night Shift',   desc: 'The farm keeps working 2 more hours while you are away (base 8h).', max: 8, base: 1200, k: 1.8, level: 4, icon: 'moon' },
 ];
-export const upgradeCost = (u, lvl) => Math.round(u.base * Math.pow(u.k, lvl));
+// the last few levels of each upgrade are long-term goals
+export const upgradeCost = (u, lvl) => Math.round(u.base * Math.pow(u.k, lvl) * (1 + 0.25 * lvl * lvl));
 
 // ---------- Farm levels ----------
 // XP comes from coins earned (sales and orders).
 const XP_TABLE = [0, 0, 60, 200, 500, 1000, 1800, 3000, 4800, 7500, 11000, 16000, 23000, 32000, 45000, 62000];
 export const MAX_LEVEL = 40;
-export function xpForLevel(l) {
-  if (l < XP_TABLE.length) return XP_TABLE[l];
-  return Math.round(XP_TABLE[XP_TABLE.length - 1] * Math.pow(1.38, l - XP_TABLE.length + 1));
-}
+// Past the first few levels each one takes noticeably longer than the last.
+const xpBase = (l) => (l < XP_TABLE.length ? XP_TABLE[l] : XP_TABLE[XP_TABLE.length - 1] * Math.pow(1.38, l - XP_TABLE.length + 1));
+export const xpForLevel = (l) => Math.round(xpBase(l) * (1 + 0.06 * Math.max(0, l - 2) ** 2) * (1 + 0.15 * Math.max(0, l - 2)));
 export const levelReward = (l) => 25 * l * l;
 
 // ---------- Land ----------
@@ -662,6 +746,67 @@ export const ORDER_SLOTS = 3;
 export const ORDER_EVERY = 8 * 60;     // seconds between new orders
 export const ORDER_NAMES = ['Granny Elm', 'Baker Rue', 'Mayor Pell', 'Tilly the Cook', 'Old Barnaby', 'Miss Clementine', 'Chef Augustin',
   'Farmer Joss', 'Little Nim', 'Innkeeper Bram', 'Professor Wick', 'Auntie Fen'];
+
+// ---------- Neighbours ----------
+// Orders come from these villagers, often asking for their favourite things.
+// Filling their orders earns friendship; each heart brings a gift, and the
+// fifth heart a lasting favour. perk keys: sell craft animal grow walk xp orderPay charm
+export const HEARTS = [4, 12, 24, 40, 60];
+export const VILLAGERS = [
+  { id: 'elm', name: 'Granny Elm', about: 'Bakes for the whole village and remembers every birthday.', likes: ['applepie', 'strawjam', 'cherryjam', 'tea', 'honey', 'apple'],
+    gift: { hat: 'bonnet' }, perk: { sell: 0.03 }, perkText: 'Everything sells for 3% more' },
+  { id: 'rue', name: 'Baker Rue', about: 'Up before dawn every day, flour to the elbows.', likes: ['flour', 'egg', 'butter', 'sugar', 'bread', 'wheat', 'muffin'],
+    gift: { coins: 4000 }, perk: { craft: 0.05 }, perkText: 'Workshops work 5% faster' },
+  { id: 'pell', name: 'Mayor Pell', about: 'Loves a good speech and a better dinner.', likes: ['wine', 'cheese', 'cake', 'pancakes', 'latte', 'plumcake'],
+    gift: { ribbons: 10 }, perk: { orderPay: 0.06 }, perkText: 'Orders pay 6% more' },
+  { id: 'tilly', name: 'Tilly the Cook', about: 'Runs the inn kitchen. Never measures anything.', likes: ['potato', 'onion', 'carrot', 'veggiesoup', 'beanstew', 'fishstew', 'cabbage'],
+    gift: { coins: 6000 }, perk: { grow: 0.04 }, perkText: 'Crops grow 4% faster' },
+  { id: 'barnaby', name: 'Old Barnaby', about: 'Kept cows for sixty years and has opinions about all of them.', likes: ['egg', 'milk', 'wool', 'corn', 'oats', 'duckegg'],
+    gift: { hat: 'flatcap' }, perk: { animal: 0.05 }, perkText: 'Animals produce 5% faster' },
+  { id: 'clem', name: 'Miss Clementine', about: 'The village florist. Her shop smells wonderful.', likes: ['lavender', 'sunflower', 'sachet', 'strawberry', 'raspberry', 'blueberry'],
+    gift: { ribbons: 10 }, perk: { charm: 25 }, perkText: '+25 charm' },
+  { id: 'nim', name: 'Little Nim', about: 'Has a sweet tooth and a pocket full of string.', likes: ['candy', 'soda', 'icecream', 'honeydrops', 'muffin', 'toffee', 'carrotjuice'],
+    gift: { coins: 3000 }, perk: { xp: 0.1 }, perkText: 'Farmhands learn 10% faster' },
+  { id: 'wick', name: 'Professor Wick', about: 'Studies beetles, brews strong tea and loses his glasses.', likes: ['tea', 'coffee', 'fish', 'smokedfish', 'honey', 'mead'],
+    gift: { coins: 8000 }, perk: { walk: 0.05 }, perkText: 'Farmhands walk 5% faster' },
+];
+for (const [id, h] of Object.entries(HATS)) h.id = id;
+export const heartsOf = (pts = 0) => HEARTS.filter((h) => pts >= h).length;
+
+// ---------- Village restoration ----------
+// Big projects to fix up the village next door. Give goods, materials and
+// coins a little at a time; a finished project helps the farm for good.
+// reward keys: merchant orderSlot grow xp orderPay offlineH ribbonMul charm
+export const PROJECTS = [
+  { id: 'bridge', name: 'Old Stone Bridge', thumb: 'path_stone', level: 4, needs: { wood: 60, stone: 80, coins: 1500 }, reward: { merchant: 1 }, text: 'Travelling merchants can reach the village again' },
+  { id: 'well', name: 'Village Well', thumb: 'well', level: 6, needs: { stone: 150, copper: 25, bread: 10, coins: 5000 }, reward: { grow: 0.05 }, text: 'Crops grow 5% faster' },
+  { id: 'bakery', name: 'Village Bakery', thumb: 'bakery', level: 8, needs: { wood: 200, stone: 150, flour: 60, egg: 40, coins: 12000 }, reward: { orderSlot: 1 }, text: 'One more order on the notice board' },
+  { id: 'school', name: 'Schoolhouse', thumb: 'cottage', level: 11, needs: { wood: 300, copper: 60, cloth: 15, candy: 20, coins: 30000 }, reward: { xp: 0.25 }, text: 'Farmhands learn 25% faster' },
+  { id: 'inn', name: 'Riverside Inn', thumb: 'farmhouse', level: 13, needs: { wood: 400, iron: 60, fish: 40, wine: 15, cheese: 20, coins: 60000 }, reward: { orderPay: 0.1 }, text: 'Orders pay 10% more' },
+  { id: 'clock', name: 'Clock Tower', thumb: 'windmill', level: 16, needs: { stone: 600, iron: 150, gold: 40, coins: 150000 }, reward: { offlineH: 2 }, text: 'The farm works 2 more hours while you’re away' },
+  { id: 'hall', name: 'Festival Hall', thumb: 'market', level: 18, needs: { wood: 600, gold: 80, cake: 30, latte: 20, gem: 5, coins: 300000 }, reward: { ribbonMul: 0.5 }, text: 'Festival orders give 50% more ribbons' },
+  { id: 'statue', name: 'Golden Statue', thumb: 'fountain', level: 22, needs: { gold: 250, gem: 25, stone: 1000, coins: 800000 }, reward: { charm: 150 }, text: '+150 charm' },
+];
+
+// ---------- Gold-star and giant crops ----------
+// Now and then a harvest comes in gold-star quality (worth 3x). Watered crops,
+// skilled farmers and the merchant's lucky horseshoe make it likelier.
+export const GOLD_BASE = 0.03, GOLD_MULT = 3;
+// A 3x3 block of ripe pumpkins, melons, cabbages or sunflowers can merge into
+// one giant crop that gives twice as much.
+export const GIANT_CROPS = new Set(['pumpkin', 'watermelon', 'honeydew', 'cabbage', 'sunflower']);
+export const GIANT_CHANCE = 0.12;
+
+// ---------- Travelling merchant ----------
+// Once the old bridge is fixed, a merchant's cart visits for a few hours every
+// couple of days (the same times on every device). Stock changes each visit.
+export const MERCHANT = { every: 2.5 * 86400, stay: 6 * 3600 };
+export const PERKS = {
+  almanac:   { name: 'Farmer’s Almanac', desc: 'Crops grow 5% faster, for good.', cost: 20000, fx: { grow: 0.05 } },
+  horseshoe: { name: 'Lucky Horseshoe', desc: 'Gold-star harvests come 3% more often, for good.', cost: 30000, fx: { gold: 0.03 } },
+  pickaxe:   { name: 'Sturdy Pickaxe', desc: 'Miners work 20% faster, for good.', cost: 25000, fx: { mine: 0.2 } },
+  satchel:   { name: 'Leather Satchel', desc: 'Farmhands carry 1 more item, for good.', cost: 40000, fx: { carry: 1 } },
+};
 
 // ---------- Weather ----------
 export const RAIN_BLOCK = 20 * 60;     // weather changes in 20 minute blocks
@@ -701,6 +846,11 @@ export const GOALS = [
   { text: 'Build a Cow Shed', n: 1, check: (s, w) => count(w, 'cowshed'), reward: 1200 },
   { text: 'Make 10 butter', n: 10, check: (s) => s.stats.craft.butter || 0, reward: 1500 },
   { text: 'Bake a cake', n: 1, check: (s) => s.stats.craft.cake || 0, reward: 2500 },
+  { text: 'Find the quarry trail at the edge of your land', n: 1, check: (s) => (s.quarry ? 1 : 0), reward: 1500 },
+  { text: 'Hire a Miner', n: 1, check: (s) => s.workers.filter((x) => x.role === 'miner').length, reward: 2000 },
+  { text: 'Restore the Old Stone Bridge (Village menu)', n: 1, check: (s) => (s.village?.done.bridge ? 1 : 0), reward: 3000 },
+  { text: 'Earn 3 hearts with a neighbour', n: 3, check: (s) => Math.max(0, ...VILLAGERS.map((v) => heartsOf(s.friends?.[v.id]))), reward: 4000 },
+  { text: 'Open Copper Hollow in the quarry', n: 1, check: (s) => (s.quarry?.zones >= 2 ? 1 : 0), reward: 5000 },
   { text: 'Own 10 parcels of land', n: 10, check: (s) => s.map.owned.filter(Boolean).length, reward: 5000 },
   { text: 'Reach farm level 10', n: 10, check: (s) => s.level, reward: 8000 },
   { text: 'Build a Winery', n: 1, check: (s, w) => count(w, 'winery'), reward: 8000 },
@@ -768,6 +918,10 @@ export const ACHIEVEMENTS = [
   { id: 'pets', name: 'Best Friends', what: 'Give your pets a pat', tiers: [10, 100, 1000], value: (s) => s.stats.pats || 0 },
   { id: 'festival', name: 'Fair Favourite', what: 'Fill festival orders', tiers: [5, 25, 100, 300], value: (s) => s.stats.festOrders || 0 },
   { id: 'collect', name: 'Collector', what: 'Discover different goods', tiers: [10, 25, 50, 75, 100], value: (s) => discovered(s) },
+  { id: 'goldstar', name: 'Gold Star', what: 'Harvest gold-star crops', tiers: [10, 100, 1000], value: (s) => Object.values(s.gold || {}).reduce((a, b) => a + b, 0) + (s.stats.goldSold || 0) },
+  { id: 'giant', name: 'Whopper', what: 'Harvest giant crops', tiers: [1, 10, 50], value: (s) => s.stats.giants || 0 },
+  { id: 'friends', name: 'Village Favourite', what: 'Earn hearts with neighbours', tiers: [5, 15, 30, 40], value: (s) => Object.values(s.friends || {}).reduce((a, p) => a + heartsOf(p), 0) },
+  { id: 'village', name: 'Good as New', what: 'Restore village buildings', tiers: [1, 4, 8], value: (s) => Object.keys(s.village?.done || {}).length },
 ];
 export const achReward = (a, tier) => Math.round(80 * Math.pow(4.2, tier) * (a.tiers.length > 3 ? 1 : 1.6));
 

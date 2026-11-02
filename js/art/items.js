@@ -3,6 +3,21 @@ import { C, sprite, cached, shade } from './core.js';
 import { ITEMS } from '../data.js';
 
 const K = {
+  log(P) {
+    P.r(0, 3, 10, 5, C.wood); P.hl(0, 3, 10, C.woodL); P.hl(0, 7, 10, C.woodD);
+    P.oval(7, 3, 3, 5, '#d8a870'); P.px(8, 5, C.woodD); P.px(2, 5, C.woodD); P.px(4, 4, C.woodD);
+  },
+  stone(P) { P.oval(0, 3, 10, 7, C.stoneD); P.oval(1, 2, 8, 6, C.stone); P.oval(2, 2, 4, 3, C.stoneL); P.px(6, 6, C.stoneDD); },
+  ore(P, d) {
+    P.oval(0, 2, 10, 8, C.stoneDD); P.oval(1, 1, 8, 7, C.stoneD); P.oval(2, 1, 4, 3, C.stone);
+    for (const [x, y] of [[3, 4], [6, 3], [5, 6], [2, 6]]) P.px(x, y, d.c);
+    P.px(6, 2, d.c2); P.px(3, 3, d.c2);
+  },
+  gem(P) {
+    P.hl(3, 1, 4, '#9ae8ff'); P.hl(2, 2, 6, '#5ac8f0'); P.r(1, 3, 8, 2, '#3aa8e0');
+    P.line(1, 5, 4, 9, '#2a88c0'); P.line(8, 5, 5, 9, '#2a88c0'); P.r(2, 5, 6, 2, '#3aa8e0'); P.r(3, 7, 4, 1, '#2a88c0');
+    P.px(3, 3, '#ffffff'); P.px(4, 2, '#e8fbff');
+  },
   wheat(P) {
     for (const [x, h] of [[2, 7], [4, 8], [6, 8], [8, 7]]) {
       P.vl(x, 10 - h, h, C.yellowD);

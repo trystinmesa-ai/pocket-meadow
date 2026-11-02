@@ -1,5 +1,5 @@
 // In-browser test suite. Open tests/index.html on the dev server.
-import { World, newGame, newWorker, migrate, sellPrice, doorTile, initObject } from '../js/world.js';
+import { World, newGame, newWorker, migrate, sellPrice, doorTile, initObject, effects } from '../js/world.js';
 import { step, curRecipe, makeOrder } from '../js/sim.js';
 import * as E from '../js/economy.js';
 import { serialize, catchUp } from '../js/save.js';
@@ -12,7 +12,12 @@ function ok(cond, name, info = '') { results.push({ pass: !!cond, name, info });
 const run = (w, secs, fast = true, dt = fast ? 1 : 0.05) => { for (let t = 0; t < secs; t += dt) step(w, dt, fast, (w._t = (w._t || T0) + dt * 1000)); };
 // New farms start empty; most tests use a little working farm instead:
 // six wheat plots, a farmer and a hauler.
-const empty = () => { const s = newGame(T0); s.simTime = T0; const w = new World(s); w.state.nextOrderAt = T0 + 1e12; return w; };
+// Tests build instantly and without stray debris, unless a test asks otherwise.
+const empty = () => {
+  const s = newGame(T0); s.simTime = T0;
+  s.objects = s.objects.filter((o) => DEFS[o.type].cat !== 'debris'); s.debrisT = -1e12;
+  const w = new World(s); w.state.nextOrderAt = T0 + 1e12; w.instantBuild = true; return w;
+};
 const fresh = () => {
   const w = empty(), s = w.state;
   for (const [x, y] of [[19, 21], [20, 21], [21, 21], [19, 22], [20, 22], [21, 22]]) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y, crop: 'wheat' }));
@@ -21,7 +26,7 @@ const fresh = () => {
   w.rebuild();
   return w;
 };
-const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.coins = coins; for (const c in CROPS) w.state.seeds[c] = true; w.rebuild(); };
+const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.coins = coins; for (const c in CROPS) w.state.seeds[c] = true; w.state.mats = { wood: 1e6, stone: 1e6, copper: 1e6, iron: 1e6, gold: 1e6 }; w.rebuild(); };
 
 // 1. crop growth rate
 {
@@ -288,7 +293,9 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   // every crop and recipe is reachable within the level cap and every input is producible
   const { DEFS: D, CROPS: CR, ITEMS: IT } = await import('../js/data.js');
   const sources = new Set(Object.keys(CR));
-  for (const d of Object.values(D)) { if (d.fruit) sources.add(d.fruit); if (d.animal) sources.add(d.animal.item); if (d.hive) sources.add(d.hive.item); for (const r of d.recipes || []) sources.add(r.out); }
+  for (const d of Object.values(D)) { if (d.fruit) sources.add(d.fruit); if (d.animal) sources.add(d.animal.item); if (d.hive) sources.add(d.hive.item); for (const r of d.recipes || []) sources.add(r.out); for (const k in d.gives || {}) sources.add(k); }
+  const { QNODES } = await import('../js/data.js');
+  for (const n of Object.values(QNODES)) { sources.add(n.item); if (n.gem) sources.add('gem'); }
   const orphans = Object.keys(IT).filter((k) => !sources.has(k));
   ok(!orphans.length, 'Every item can actually be obtained', orphans.join(', '));
 }
@@ -400,9 +407,9 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   E.setCrop(w, p, 'carrot');
   ok(p.crop === 'pumpkin' && p.next === 'carrot', 'A planted crop stays; the new one is queued');
   w.state.coins = 1000;
-  run(w, 30, true);
+  for (let i = 0; i < 30 && !(w.state.stats.harvest.pumpkin >= 1); i++) run(w, 1, true);
   ok((w.state.stats.harvest.pumpkin || 0) >= 1 && p.crop === 'carrot' && !p.next, 'After the harvest the plot switches to the new crop', `${p.crop} ${p.st} ${p.p.toFixed(2)}`);
-  ok(p.st === 'empty' || p.p < 0.5, 'The new crop starts growing from scratch');
+  ok(p.st === 'empty' || p.p < 0.5, 'The new crop starts growing from scratch', `${p.st} ${p.p.toFixed(2)}`);
   E.setCrop(w, w.plots[2], 'carrot'); E.setCrop(w, w.plots[2], 'wheat');
   ok(!w.plots[2].next, 'Picking the current crop again cancels the switch');
 }
@@ -426,7 +433,7 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
 {
   const D = await import('../js/data.js');
   ok(D.USES.wheat.some((u) => u.out === 'flour') && D.USES.wheat.some((u) => u.feeds === 'chicken') && D.USES.wheat.some((u) => u.out === 'beer'), 'Wheat lists flour, ale and chicken feed');
-  const missing = Object.keys(ITEMS).filter((k) => !(D.SOURCES[k] || []).length);
+  const missing = Object.keys(ITEMS).filter((k) => !ITEMS[k].mat && !(D.SOURCES[k] || []).length);
   ok(!missing.length, 'Every item says where it comes from', missing.join(','));
 }
 
@@ -541,6 +548,173 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(E.canFill(w3, order) && E.fillOrder(w3, order) === '' && w3.have('wheat') === 0 && mill.inp.wheat === 22, 'Orders use storage first, then the mill’s pantry', JSON.stringify(mill.inp));
   const c0 = w3.state.coins;
   ok(E.sell(w3, 'wheat', 5) > 0 && mill.inp.wheat === 17 && w3.state.coins > c0, 'Selling reaches into a pantry', JSON.stringify(mill.inp));
+}
+
+// 27. building materials, construction, debris and the quarry
+{
+  const D = await import('../js/data.js');
+  const Q = await import('../js/quarry.js');
+  const w = empty(), s = w.state;
+  s.level = 12; s.coins = 1e6; s.mats = {};
+  const spot = (type) => { for (let y = 16; y < 24; y++) for (let x = 16; x < 32; x++) if (w.canPlace(type, x, y) === '') return [x, y]; };
+  const [mx, my] = spot('mill');
+  const c0 = s.coins;
+  ok(/Needs/.test(E.place(w, 'mill', mx, my)) && s.coins === c0, 'Without wood and stone a building can’t be bought (and costs nothing)');
+  const need = D.matsFor('mill', 0);
+  s.mats = { ...need };
+  w.instantBuild = false;
+  ok(E.place(w, 'mill', mx, my) === '' && !w.mat('wood') && !w.mat('stone'), 'Buying it uses up the materials', JSON.stringify(s.mats));
+  const mill = w.objAt(mx, my);
+  ok(mill.build > 0 && !w.bldgs.includes(mill) && w.sites.includes(mill), 'A new building starts as a construction site that does nothing yet', `${mill.build}s`);
+  const coins1 = s.coins;
+  ok(E.remove(w, mill) === '' && s.coins === coins1 + mill.paid.coins && w.mat('wood') === need.wood, 'Removing an unfinished building gives everything back');
+  s.mats = { ...need }; E.place(w, 'mill', mx, my);
+  const m2 = w.objAt(mx, my), T = m2.build;
+  run(w, T + 2, true);
+  ok(!m2.build && w.bldgs.includes(m2), 'It starts working once the time is up', `took ${T}s`);
+  // a farmhand helping makes it go up faster
+  const w2 = fresh(); rich(w2, 12); w2.instantBuild = false;
+  for (const x of w2.state.workers) x.role = 'hauler';
+  w2.state.settings.helpers = true;
+  let at; for (let y = 16; y < 24 && !at; y++) for (let x = 22; x < 32 && !at; x++) if (w2.canPlace('bakery', x, y) === '') at = [x, y];
+  E.place(w2, 'bakery', at[0], at[1]);
+  const b = w2.objAt(at[0], at[1]), BT = b.build;
+  run(w2, BT * 0.75, true);
+  ok(!b.build, 'Farmhands lend a hand so it finishes sooner', `${BT}s job, ${b.build ? Math.round(b.build) + 's left' : 'done'} after ${Math.round(BT * 0.75)}s`);
+  // upgrades need materials too
+  s.mats = {};
+  ok(/Needs/.test(E.upgradeBuilding(w, m2)) && m2.lvl === 1, 'Upgrades need materials as well');
+  s.mats = D.upgMatsFor(m2);
+  ok(E.upgradeBuilding(w, m2) === '' && m2.lvl === 2, 'With them, the upgrade goes through');
+  // debris turns up and gets cleared
+  const w3 = fresh(); w3.state.debrisT = D.DEBRIS_EVERY - 1; w3.state.mats = {};
+  run(w3, 3, true);
+  ok(w3.debris.length === 1, 'Debris turns up on open land now and then');
+  const deb = w3.debris[0];
+  ok(deb && ![...w3.doors].some((i) => Math.abs((i % D.MAP.w) - deb.x) <= 1 && Math.abs(Math.floor(i / D.MAP.w) - deb.y) <= 1), 'It never lands next to an entrance');
+  w3.state.debrisT = -1e12;
+  run(w3, 120, true);
+  ok(!w3.debris.length && Object.values(w3.state.mats).some((v) => v > 0), 'Farmhands clear it for materials', JSON.stringify(w3.state.mats));
+  for (let i = 0; i < 40; i++) { w3.state.debrisT = D.DEBRIS_EVERY; for (const x of w3.state.workers) x.role = 'artisan'; run(w3, 1, true); }
+  ok(w3.debris.length <= D.debrisMax(w3.state.map.owned.filter(Boolean).length), 'Only a few pieces at a time', `${w3.debris.length}`);
+  // clearing by hand
+  const one = w3.debris[0], m0 = { ...w3.state.mats };
+  if (one) { E.remove(w3, one); ok(Object.keys(D.DEFS[one.type].gives).every((k) => (w3.state.mats[k] || 0) > (m0[k] || 0)), 'Clearing it yourself gives the materials too'); }
+  // the quarry
+  const w4 = fresh(); rich(w4, 12); w4.state.mats = {};
+  ok(/edge/.test(E.discoverQuarry(w4)), 'The quarry trail needs land at the edge of the map');
+  ok(E.hire(w4, 'miner') !== '', 'Miners can’t be hired before the quarry is found');
+  E.buyParcel(w4, 1, 2); E.buyParcel(w4, 0, 2);
+  ok(E.discoverQuarry(w4) === '' && w4.state.quarry.nodes.length > 0, 'Owning an edge parcel reveals the quarry', `${w4.state.quarry.nodes.length} nodes`);
+  ok(E.hire(w4, 'miner') === '', 'Then miners can be hired');
+  run(w4, 400, true);
+  ok(w4.mat('wood') + w4.mat('stone') > 5, 'Miners bring wood and stone back to the shed', JSON.stringify(w4.state.mats));
+  ok(w4.state.quarry.nodes.filter((n) => n.z > 0).length === 0, 'Deeper zones stay shut until opened');
+  w4.state.level = 5;
+  ok(/level/.test(E.openZone(w4, 1)), 'Copper Hollow needs farm level 6');
+  w4.state.level = 6; w4.state.mats = { wood: 999, stone: 999 };
+  ok(E.openZone(w4, 1) === '' && w4.state.quarry.zones === 2 && w4.state.quarry.nodes.some((n) => n.k === 'copper'), 'Opening a zone adds its ore veins');
+  // the shed has a limit and miners wait when it's full
+  w4.state.mats = { wood: w4.shedCap, stone: w4.shedCap, copper: w4.shedCap };
+  run(w4, 60, true);
+  ok(w4.mat('wood') === w4.shedCap && w4.mat('stone') === w4.shedCap, 'The material shed never goes over its limit');
+  const miner = w4.state.workers.find((x) => x.role === 'miner');
+  ok(/full/.test(miner._act || ''), 'Miners wait when the shed is full', miner._act);
+  const cap0 = w4.shedCap; w4.state.mats = { wood: 999, stone: 999 }; w4.state.coins = 1e6; w4.state.mats.wood = 999;
+  // a bigger shed holds more (limit applies to adding, so set materials directly)
+  ok(E.upgradeShed(w4) === '' && w4.shedCap > cap0, 'A bigger shed holds more', `${cap0} -> ${w4.shedCap}`);
+  // letting a miner go keeps what they carried
+  miner.carry = { item: 'stone', qty: 3 }; const st0 = w4.mat('stone');
+  E.fire(w4, miner);
+  ok(w4.mat('stone') === st0 + 3 && !w4.state.piles.some((p) => p.item === 'stone'), 'A miner who leaves drops their basket in the shed, not on the farm');
+  // nothing transient sneaks into the save
+  const saved = JSON.parse(serialize(w4.state));
+  ok(saved.quarry && saved.quarry.nodes.every((n) => !('_c' in n)) && saved.mats, 'The quarry and shed are saved, claims are not');
+  // offline: miners keep working
+  const w5 = fresh(); rich(w5, 12); w5.state.mats = {}; E.buyParcel(w5, 1, 2); E.buyParcel(w5, 0, 2); E.discoverQuarry(w5); E.hire(w5, 'miner');
+  await catchUp(w5, 3600 * 1000);
+  ok(w5.mat('wood') + w5.mat('stone') > 20, 'Miners keep digging while you’re away', JSON.stringify(w5.state.mats));
+  // old saves get a starting stock and every field the new systems need
+  const old = JSON.parse(serialize(fresh().state)); delete old.mats; delete old.shed; delete old.quarry;
+  old.objects.push(initObject({ id: 999, type: 'mill', x: 8, y: 8 }));
+  const mg = migrate(old);
+  ok(mg.mats.wood > 0 && mg.shed === 1 && mg.quarry === null, 'Older farms get a head start of wood and stone', JSON.stringify(mg.mats));
+}
+
+// 28. neighbours, village projects, gold-star and giant crops, the merchant
+{
+  const D = await import('../js/data.js');
+  const M = await import('../js/merchant.js');
+  const w = fresh(), s = w.state; rich(w, 12, 1e6);
+  // orders come from villagers and make friends
+  w.state.nextOrderAt = 0; run(w, 2, true);
+  ok(s.orders.length > 0 && s.orders.every((o) => D.VILLAGERS.some((v) => v.id === o.who)), 'Orders come from named neighbours');
+  const v = D.VILLAGERS[0];
+  const order = { id: 9001, from: v.name, who: v.id, items: [{ item: v.likes[0], qty: 1 }], reward: 10, xp: 1 };
+  w.addItem(v.likes[0], 1); s.orders.push(order);
+  ok(E.fillOrder(w, order) === '' && s.friends[v.id] === 3, 'Filling their order earns friendship (extra for favourites)', `${s.friends[v.id]}`);
+  const c0 = s.coins;
+  ok(D.heartsOf(s.friends[v.id]) === 0 && D.heartsOf(4) === 1, 'Hearts come at set friendship points');
+  for (let i = 0; i < 30; i++) { const o = { id: 9100 + i, from: v.name, who: v.id, items: [{ item: 'wheat', qty: 1 }], reward: 1, xp: 0 }; w.addItem('wheat', 1); s.orders.push(o); E.fillOrder(w, o); }
+  ok(D.heartsOf(s.friends[v.id]) === 5 && s.hats.bonnet && s.coins > c0, 'Each heart brings a gift (Granny Elm gives a bonnet)', `${s.friends[v.id]} pts`);
+  ok(Math.abs(w.fx.sell - effects(s, w).sell) < 1e-9 && w.fx.sell > 1.0299, 'Five hearts adds their lasting favour', `sell x${w.fx.sell.toFixed(3)}`);
+  // village projects
+  const p0 = D.PROJECTS[0];
+  s.level = 3;
+  ok(/level/.test(E.giveProject(w, p0.id)), 'Projects open at their farm level');
+  s.level = 12; s.mats = { wood: 30, stone: 0 }; s.coins = 500;
+  ok(E.giveProject(w, p0.id) === '' && s.village.give[p0.id].wood === 30 && s.coins === 500, 'You can give a little at a time (and coins only when you choose)', JSON.stringify(s.village.give[p0.id]));
+  ok(E.giveProject(w, p0.id, true) === '' && s.coins === 0 && s.village.give[p0.id].coins === 500, 'Paying coins toward it is separate');
+  ok(!w.fx.merchant, 'The merchant needs the bridge first');
+  s.mats = { wood: 999, stone: 999 }; s.coins = 1e6;
+  E.giveProject(w, p0.id, true);
+  ok(E.giveProject(w, p0.id) === '' && s.village.done.bridge && w.mat('wood') === 999 - 30 && w.fx.merchant, 'Finishing the bridge brings the merchant', `wood left ${w.mat('wood')}`);
+  ok(/Already/.test(E.giveProject(w, p0.id)), 'A finished project takes nothing more');
+  const p1 = D.PROJECTS[1]; s.mats = { stone: 999, copper: 999 }; w.addItem('bread', 10); s.coins = 1e6;
+  const g0 = w.fx.grow;
+  E.giveProject(w, p1.id, true);
+  ok(E.giveProject(w, p1.id) === '' && w.fx.grow > g0 && !w.have('bread'), 'The well makes crops grow faster', `${g0} -> ${w.fx.grow}`);
+  // the merchant
+  const T = Date.UTC(2026, 5, 1);
+  let at = null; for (let t = T; t < T + 7 * 86400e3 && !at; t += 600e3) if (M.visitAt(t)) at = t;
+  ok(at && M.merchantHere(w, at), 'The merchant visits now and then');
+  const vis = M.visitAt(at), stock = M.stockOf(vis.k);
+  ok(stock.length === 5 && JSON.stringify(stock) === JSON.stringify(M.stockOf(vis.k)), 'Every device sees the same stock', stock.map((o) => o.key).join(' '));
+  ok(M.visitAt(at + D.MERCHANT.stay * 1000 + 1) === null || M.visitAt(at + D.MERCHANT.stay * 1000 + 1).k !== vis.k, 'The cart leaves after a few hours');
+  const mat = stock.find((o) => o.key.startsWith('mat:'));
+  const [, mk, mn] = mat.key.split(':'); s.mats = {}; s.coins = 1e7; s.shed = 8;
+  ok(E.buyOffer(w, mat.key, at) === '' && w.mat(mk) === +mn, 'Materials from the cart go into the shed', mat.key);
+  ok(/Sold out/.test(E.buyOffer(w, mat.key, at)), 'Each ware sells once per visit');
+  ok(/isn’t here/.test(E.buyOffer(w, mat.key, at + 3 * 86400e3 * 0 + D.MERCHANT.stay * 1000 + 5)), 'Nothing to buy once the cart has gone');
+  const perk = stock.find((o) => o.key.startsWith('perk:'));
+  if (perk) ok(E.buyOffer(w, perk.key, at) === '' && s.perks[perk.key.split(':')[1]], 'Perks stay with the farm for good', perk.key);
+  ok(/merchant/.test(E.seasonalBlock(w, D.DEFS.geode, at + 1e10)) , 'Merchant decorations can’t be bought from the build menu');
+  // gold-star produce
+  const w2 = fresh(); w2.state.gold = {};
+  for (const p of w2.plots) { p.st = 'ripe'; p.p = 1; }
+  w2.fx.gold = 1; // everything comes in gold-star
+  run(w2, 30, true);
+  ok((w2.state.gold.wheat || 0) > 0, 'Some harvests come in gold-star', JSON.stringify(w2.state.gold));
+  const gc = w2.state.coins, gn = w2.state.gold.wheat;
+  ok(E.sellGold(w2, 'wheat', 1e9) === gn * sellPrice(w2, 'wheat') * D.GOLD_MULT && !w2.state.gold.wheat && w2.state.coins > gc, 'Gold-star crops sell for three times as much');
+  // giant crops
+  const w3 = empty(), s3 = w3.state; rich(w3, 12, 1e6);
+  for (let y = 20; y < 23; y++) for (let x = 19; x < 22; x++) s3.objects.push(initObject({ id: s3.nextId++, type: 'plot', x, y, crop: 'pumpkin', st: 'grow', p: 0.999 }));
+  w3.rebuild();
+  run(w3, 1, true);
+  const S = await import('../js/sim.js');
+  if (!w3.plots.some((p) => p.giant)) S.tryGiant(w3, w3.plots[4], 1); // make the lucky roll happen
+  newWorker(s3, 'farmer', 'Pip'); newWorker(s3, 'hauler', 'Bea'); s3.workers[0].x = 20.5; s3.workers[0].y = 23.5;
+  const g = w3.plots.filter((p) => p.giant);
+  ok(g.length === 9 && g.every((p) => p.giant === g[0].giant), 'Nine ripe pumpkins in a square can grow into one giant', `${g.length}`);
+  const h0 = s3.stats.harvest.pumpkin || 0;
+  run(w3, 20, true);
+  const got = (s3.stats.harvest.pumpkin || 0) - h0;
+  ok(got >= 9 * D.CROPS.pumpkin.yield * 2 && w3.plots.every((p) => !p.giant && p.st !== 'ripe'), 'Harvesting a giant takes the whole square, for double', `+${got}`);
+  ok(s3.stats.giants === 1, 'Giant harvests are counted');
+  // save round trip keeps the new progress
+  const back = migrate(JSON.parse(serialize(w.state)));
+  ok(back.friends[v.id] === s.friends[v.id] && back.village.done.bridge && back.perks && back.gold, 'Friendship, projects and perks are saved');
 }
 
 // ---- report ----

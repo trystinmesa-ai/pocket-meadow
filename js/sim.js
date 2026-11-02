@@ -2,7 +2,8 @@
 // farmhands' job system. The same code runs live (with walking along real
 // paths) and in fast mode for offline catch-up (walking becomes a timer).
 import { DEFS, ITEMS, CROPS, ROLES, ALL_TASKS, ORDER_SLOTS, ORDER_EVERY, ORDER_NAMES, RAIN_BLOCK, RAIN_CHANCE,
-  MAX_WORKER_LEVEL, workerXpNeeded } from './data.js';
+  MAX_WORKER_LEVEL, workerXpNeeded, DEBRIS_EVERY, debrisMax, MAP, VILLAGERS, GIANT_CROPS, GIANT_CHANCE, GOLD_MULT } from './data.js';
+import { stepQuarry } from './quarry.js';
 import { idx, doorTile, hash2, cropUnlocked } from './world.js';
 import { findPath } from './path.js';
 import { seasonAt, festivalOn, festivalId, seasonGrowth, canPlantNow } from './seasons.js';
@@ -167,7 +168,7 @@ export function step(world, dt, fast, now) {
     if (p.st === 'grow') {
       if (!p.wet && (rain || world.sprinkled.has(idx(p.x, p.y)))) p.wet = true;
       p.p += (dt / CROPS[p.crop].time) * fx.grow * (p.wet ? fx.water : 1) * seasonGrowth(p.crop, world.season);
-      if (p.p >= 1) { p.p = 1; p.st = 'ripe'; }
+      if (p.p >= 1) { p.p = 1; p.st = 'ripe'; if (GIANT_CROPS.has(p.crop)) tryGiant(world, p); }
       else if (!p.wet && p.p < 0.75) dry++;
     }
     if (p.st === 'ripe') ripe++;
@@ -210,24 +211,69 @@ export function step(world, dt, fast, now) {
   festivalTick(world, now);
   world.hauler = s.workers.some((w) => w.role === 'hauler');
   world.artisan = s.workers.some((w) => w.role === 'artisan');
-  for (const w of s.workers) updateWorker(world, w, dt, fast);
+  buildTick(world, dt);
+  debrisTick(world, dt);
+  world.avail.sites = world.sites.length;
+  world.avail.debris = world.debris.length;
+  for (const w of s.workers) if (w.role !== 'miner') updateWorker(world, w, dt, fast);
+  stepQuarry(world, dt);
 
   world._autoT = (world._autoT || 0) + dt;
   if (world._autoT >= 4) { world._autoT = 0; autoSellAll(world); }
   s.simTime = now;
 }
 
+// ---------- construction & debris ----------
+function buildTick(world, dt) {
+  let done = false;
+  for (const o of world.sites) {
+    o.build -= dt;
+    if (o.build <= 0) { delete o.build; delete o.buildT; delete o.paid; done = true; world.events.push({ t: 'built', o }); }
+  }
+  if (done) world.rebuild();
+}
+// Now and then a branch or rock turns up on open land (never next to an entrance).
+function debrisTick(world, dt) {
+  const s = world.state;
+  s.debrisT = (s.debrisT || 0) + dt;
+  if (s.debrisT < DEBRIS_EVERY) return;
+  s.debrisT = 0;
+  const parcels = s.map.owned.filter(Boolean).length;
+  if (world.debris.length >= debrisMax(parcels)) return;
+  const roll = R();
+  const type = roll < 0.5 ? 'rubble_log' : roll < 0.88 || s.level < DEFS.rubble_ore.level ? 'rubble_rock' : 'rubble_ore';
+  const own = [];
+  s.map.owned.forEach((v, i) => { if (v) own.push(i); });
+  const PWn = MAP.w / MAP.parcel;
+  for (let tries = 0; tries < 40; tries++) {
+    const p = own[Math.floor(R() * own.length)];
+    const x = (p % PWn) * MAP.parcel + Math.floor(R() * MAP.parcel), y = Math.floor(p / PWn) * MAP.parcel + Math.floor(R() * MAP.parcel);
+    if (world.canPlace(type, x, y)) continue;
+    let ok = true;
+    for (let dy = -1; dy <= 1 && ok; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const o = world.objAt(x + dx, y + dy);
+      if (world.doors.has(idx(x + dx, y + dy)) || (o && DEFS[o.type].cat === 'debris')) { ok = false; break; }
+    }
+    if (!ok) continue;
+    s.objects.push({ id: s.nextId++, type, x, y });
+    world.rebuild();
+    world.events.push({ t: 'debris', type });
+    return;
+  }
+}
+
 // ---------- orders ----------
 function ordersTick(world, now) {
   const s = world.state;
-  if (s.orders.length >= ORDER_SLOTS) { if (now > s.nextOrderAt) s.nextOrderAt = now + 60 * 1000; return; }
+  const slots = world.fx.orderSlots;
+  if (s.orders.length >= slots) { if (now > s.nextOrderAt) s.nextOrderAt = now + 60 * 1000; return; }
   let guard = 0;
-  while (s.orders.length < ORDER_SLOTS && now >= s.nextOrderAt && guard++ < 5) {
+  while (s.orders.length < slots && now >= s.nextOrderAt && guard++ < 5) {
     const o = makeOrder(world);
     if (!o) { s.nextOrderAt = now + 60 * 1000; return; }
     s.orders.push(o);
     s.nextOrderAt += ORDER_EVERY * 1000;
-    if (s.nextOrderAt < now - ORDER_EVERY * 1000 * ORDER_SLOTS) s.nextOrderAt = now;
+    if (s.nextOrderAt < now - ORDER_EVERY * 1000 * slots) s.nextOrderAt = now;
   }
 }
 
@@ -252,7 +298,7 @@ function festivalTick(world, now) {
   while (s.fest.orders.length < FESTIVAL_SLOTS && now >= s.fest.next && guard++ < 4) {
     const o = makeOrder(world, 2.2);
     if (!o) break;
-    o.ribbons = 3 + Math.floor(R() * 3) + o.items.length;
+    o.ribbons = Math.round((3 + Math.floor(R() * 3) + o.items.length) * world.fx.ribbons);
     o.festival = true;
     s.fest.orders.push(o);
     s.fest.next = s.fest.orders.length < FESTIVAL_SLOTS ? now : now + FESTIVAL_ORDER_EVERY * 1000;
@@ -266,14 +312,17 @@ export function makeOrder(world, scale = 1) {
   if (!pool.length) return null;
   const n = Math.min(pool.length, 1 + Math.floor(R() * Math.min(3, 1 + s.level / 3)));
   const picks = [];
-  const shuffled = pool.slice().sort(() => R() - 0.5);
-  for (const it of shuffled) { if (picks.length >= n) break; picks.push(it); }
+  // most orders come from a neighbour asking for something they love
+  const who = VILLAGERS[Math.floor(R() * VILLAGERS.length)];
+  const loved = who.likes.filter((k) => pool.includes(k)).sort(() => R() - 0.5);
+  const shuffled = (R() < 0.6 ? loved.slice(0, Math.max(1, n - 1)) : []).concat(pool.slice().sort(() => R() - 0.5));
+  for (const it of shuffled) { if (picks.length >= n) break; if (!picks.includes(it)) picks.push(it); }
   const budget = 30 * Math.pow(1.5, s.level) * scale;
   const items = picks.map((it) => ({ item: it, qty: Math.max(1, Math.min(60, Math.round((budget / picks.length) / ITEMS[it].value * (0.7 + R() * 0.6)))) }));
   const value = items.reduce((v, x) => v + ITEMS[x.item].value * x.qty, 0);
   return {
-    id: s.nextId++, from: ORDER_NAMES[Math.floor(R() * ORDER_NAMES.length)], items,
-    reward: Math.round(value * (1.6 + R() * 0.5)), xp: Math.round(value * 0.6),
+    id: s.nextId++, from: who.name, who: who.id, items,
+    reward: Math.round(value * (1.6 + R() * 0.5) * world.fx.orderPay), xp: Math.round(value * 0.6),
   };
 }
 
@@ -281,6 +330,8 @@ export function makeOrder(world, scale = 1) {
 const wSpeed = (world, w, tile) => WALK * world.fx.walk * (1 + 0.04 * (w.lvl - 1)) * tile;
 const wDur = (world, w, base) => base / (world.fx.work * (1 + 0.05 * (w.lvl - 1)));
 const wx = (w) => Math.floor(w.x), wy = (w) => Math.floor(w.y);
+export const minerSpeed = (world, w) => wSpeed(world, w, 1);
+export const minerDur = (world, w, base) => wDur(world, w, base) / world.fx.mine;
 const manhattan = (w, x, y) => Math.abs(w.x - 0.5 - x) + Math.abs(w.y - 0.5 - y);
 
 function nearest(list, w, ok) {
@@ -325,9 +376,9 @@ class Job {
   release() { for (const [o, k] of this.claims) if (o[k] === this.w.id) delete o[k]; this.claims = []; }
 }
 
-function addXp(world, w, n) {
+export function addXp(world, w, n) {
   if (w.lvl >= MAX_WORKER_LEVEL) return;
-  w.xp += n;
+  w.xp += n * world.fx.xp;
   while (w.lvl < MAX_WORKER_LEVEL && w.xp >= workerXpNeeded(w.lvl)) {
     w.xp -= workerXpNeeded(w.lvl); w.lvl++;
     world.events.push({ t: 'wlevel', w });
@@ -573,6 +624,34 @@ const FIND = {
     }, 'basket');
     return deliver(job, false);
   },
+  // lend a hand on a building that's going up (each swing takes time off the wait)
+  build(world, w) {
+    if (!world.avail.sites) return null;
+    const o = nearest(world.sites, w, (b) => !b._cb && !bad(world, b));
+    if (!o) return null;
+    const [x, y] = accessTile(world, o);
+    const job = new Job(w, 'build', `Building the ${DEFS[o.type].name}`).claim(o, '_cb');
+    job.go(x, y, o.id);
+    for (let i = 0; i < 4; i++) job.do('work', wDur(world, w, 3), () => { if (o.build > 0) { o.build -= 3; addXp(world, w, 1); } }, 'hammer');
+    return job;
+  },
+  clear(world, w) {
+    if (!world.avail.debris) return null;
+    const o = nearest(world.debris, w, (b) => !b._c && !bad(world, b) && Object.keys(DEFS[b.type].gives).some((k) => world.mat(k) < world.shedCap));
+    if (!o) return null;
+    const d = DEFS[o.type];
+    const [x, y] = accessTile(world, o);
+    const job = new Job(w, 'clear', `Clearing a ${d.name.toLowerCase()}`).claim(o, '_c');
+    job.go(x, y, o.id).do('work', wDur(world, w, 2.5), () => {
+      const s = world.state;
+      if (!s.objects.includes(o)) return;
+      for (const k in d.gives) { const n = world.addMat(k, d.gives[k]); if (n) float(world, o.x, o.y - 1, `+${n}`, k); }
+      s.objects.splice(s.objects.indexOf(o), 1);
+      world.rebuild();
+      addXp(world, w, 2);
+    }, o.type === 'rubble_log' ? 'axe' : 'pick');
+    return job;
+  },
   operate(world, w) {
     const b = nearest(world.bldgs, w, (o) => {
       if (o.off || o._co || bad(world, o)) return false;
@@ -589,14 +668,47 @@ const FIND = {
   },
 };
 
+// When a plot ripens, a full 3x3 block of the same ripe crop around it may
+// merge into a giant crop (marked on all nine plots by the corner plot's id).
+export function tryGiant(world, p, chance = GIANT_CHANCE) {
+  if (p.giant) return;
+  for (let oy = -2; oy <= 0; oy++) for (let ox = -2; ox <= 0; ox++) {
+    const block = [];
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
+      const q = world.objAt(p.x + ox + x, p.y + oy + y);
+      if (q && q.type === 'plot' && q.crop === p.crop && q.st === 'ripe' && !q.giant && !q.next) block.push(q);
+    }
+    if (block.length < 9) continue;
+    if (R() >= chance) return;
+    for (const q of block) q.giant = block[0].id;
+    world.events.push({ t: 'giantgrew', x: block[4].x, y: block[4].y, crop: p.crop });
+    return;
+  }
+}
+
 function harvestSteps(world, w, job, p) {
   job.claim(p, '_c');
   job.go(p.x, p.y, p.id).do('harvest', wDur(world, w, 1.1), () => {
     if (p.st !== 'ripe') return;
     const c = CROPS[p.crop];
-    const n = c.yield + (R() < world.fx.bumper ? 1 : 0);
     const item = p.crop;
+    // a giant crop is harvested all at once and gives twice as much
+    const block = p.giant ? world.plots.filter((q) => q.giant === p.giant) : [p];
+    if (p.giant) { world.state.stats.giants = (world.state.stats.giants || 0) + 1; world.events.push({ t: 'giant', x: p.x, y: p.y, crop: item }); }
+    let n = 0;
+    for (const q of block) n += (c.yield + (R() < world.fx.bumper ? 1 : 0)) * (p.giant ? 2 : 1);
     world.state.stats.harvest[item] = (world.state.stats.harvest[item] || 0) + n;
+    // now and then a gold-star one: kept on the prize shelf, worth more
+    const goldP = world.fx.gold + 0.005 * (w.lvl - 1) + (p.wet ? 0.02 : 0);
+    let stars = 0;
+    for (let i = 0; i < n; i++) if (R() < goldP) stars++;
+    if (stars) { n -= stars; const g = world.state.gold; g[item] = (g[item] || 0) + stars; float(world, p.x, p.y - 1, `★${stars}`, item); }
+    for (const q of block) if (q !== p) { delete q.giant; if (q.next) { q.crop = q.next; delete q.next; q.st = 'empty'; q.p = 0; } else if (c.regrow) { q.st = 'grow'; q.p = c.regrow; } else { q.st = 'empty'; q.p = 0; } }
+    delete p.giant;
+    if (n <= 0) { // every one of them came in gold-star
+      if (p.next) { p.crop = p.next; delete p.next; p.st = 'empty'; p.p = 0; world.rebuild(); } else if (c.regrow) { p.st = 'grow'; p.p = c.regrow; } else { p.st = 'empty'; p.p = 0; }
+      addXp(world, w, 2); return;
+    }
     if (p.next) { p.crop = p.next; delete p.next; p.st = 'empty'; p.p = 0; world.rebuild(); } // switch crops after this harvest
     else if (c.regrow) { p.st = 'grow'; p.p = c.regrow; } else { p.st = 'empty'; p.p = 0; }
     p.wet = world.sprinkled.has(idx(p.x, p.y)) || world.raining;
@@ -724,6 +836,8 @@ function assignJob(world, w, fast) {
       if ((job = FIND[t](world, w))) break;
     }
   }
+  // building and clearing debris happen even with helping turned off
+  if (!job) job = FIND.build(world, w) || FIND.clear(world, w);
   w.job = job || wanderJob(world, w, fast);
 }
 

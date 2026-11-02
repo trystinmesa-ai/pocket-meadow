@@ -17,6 +17,9 @@ import { seasonAt } from './seasons.js';
 import { petFrame } from './art/chars.js';
 import { PETS } from './data.js';
 import { gradeCanvas, gradeHex } from './art/grade.js';
+import { nodeSprite, debrisSprite, cartSprite, signSprite, lockSprite, quarryGround } from './art/quarry.js';
+import { QUARRY, QZONES, QNODES } from './data.js';
+import { trailParcels } from './economy.js';
 
 const BORDER = 6; // tiles of forest drawn around the map
 
@@ -26,6 +29,8 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.world = world;
     this.cam = { x: 24 * TILE, y: 20 * TILE, z: 3 };
+    this.scene = 'farm'; // or 'quarry'
+    this.cams = {};
     this.particles = [];
     this.floats = [];
     this.critters = new Map();
@@ -70,10 +75,21 @@ export class Renderer {
   clampCam() {
     const c = this.cam, S = this.scale;
     const halfW = this.cv.width / 2 / S, halfH = this.cv.height / 2 / S;
-    const minX = -BORDER * TILE * 0.6 + halfW, maxX = (MAP.w + BORDER * 0.6) * TILE - halfW;
-    const minY = -BORDER * TILE * 0.6 + halfH, maxY = (MAP.h + BORDER * 0.6) * TILE - halfH;
-    c.x = minX > maxX ? MAP.w * TILE / 2 : Math.max(minX, Math.min(maxX, c.x));
-    c.y = minY > maxY ? MAP.h * TILE / 2 : Math.max(minY, Math.min(maxY, c.y));
+    const q = this.scene === 'quarry', W = q ? QUARRY.w : MAP.w, H = q ? QUARRY.h : MAP.h, B = q ? 1 : BORDER * 0.6;
+    const minX = -B * TILE + halfW, maxX = (W + B) * TILE - halfW;
+    const minY = -B * TILE + halfH, maxY = (H + B) * TILE - halfH;
+    c.x = minX > maxX ? W * TILE / 2 : Math.max(minX, Math.min(maxX, c.x));
+    c.y = minY > maxY ? H * TILE / 2 : Math.max(minY, Math.min(maxY, c.y));
+  }
+  /** Switch between the farm and the quarry, each keeping its own camera. */
+  setScene(name) {
+    if (name === this.scene) return;
+    this.cams[this.scene] = { ...this.cam };
+    this.scene = name;
+    this.cam = this.cams[name] || (name === 'quarry' ? { x: (QUARRY.cart[0] + 4) * TILE, y: QUARRY.road * TILE, z: this.cam.z } : { x: 24 * TILE, y: 20 * TILE, z: this.cam.z });
+    this.floats.length = 0;
+    this.particles = this.particles.filter((p) => p.screen);
+    this.clampCam();
   }
 
   makeBorder() {
@@ -108,6 +124,7 @@ export class Renderer {
 
   // ---------- frame ----------
   draw(dt) {
+    if (this.scene === 'quarry') return this.drawQuarry(dt);
     this.t += dt;
     const { ctx, world } = this;
     const s = world.state;
@@ -167,7 +184,7 @@ export class Renderer {
       if (d.cat === 'path') continue;
       const X = o.x * TILE, Y = o.y * TILE, W = d.w * TILE, H = d.h * TILE;
       if (!vis(X - 16, Y - 48, W + 32, H + 56)) continue;
-      add(Y + H - (d.walk && d.cat !== 'field' ? 8 : 0), () => this.drawObject(o, d, X, Y, W, H));
+      add(o.giant === o.id ? Y + 3 * TILE : Y + H - (d.walk && d.cat !== 'field' ? 8 : 0), () => this.drawObject(o, d, X, Y, W, H));
     }
     for (const p of s.piles) {
       const X = p.x * TILE + 8, Y = p.y * TILE + 13;
@@ -177,8 +194,14 @@ export class Renderer {
     this.updatePets(dt);
     for (const p of this.petState.values()) add(p.y, () => this.drawPet(p));
     for (const c of this.critters.values()) for (const a of c) add(a.y, () => this.drawCritter(a));
+    // trail signs at the edge of the map lead to the quarry
+    for (const tp of trailParcels(world)) {
+      const P = MAP.parcel, mid = (a) => (a * P + P / 2) * TILE;
+      const [X, Y] = tp.side === 'w' ? [-TILE * 0.8, mid(tp.py)] : tp.side === 'e' ? [MAP.w * TILE + TILE * 0.8, mid(tp.py)] : tp.side === 'n' ? [mid(tp.px), -TILE * 0.3] : [mid(tp.px), MAP.h * TILE + TILE * 1.4];
+      add(Y, () => { const [x, y] = this.blit(signSprite(), X, Y, 0); this.hits.push({ ref: { trail: true }, x0: x - 6, y0: y - 6, x1: x + 24, y1: Y + 6 }); });
+    }
     for (const w of s.workers) {
-      if (w._hidden) continue;
+      if (w._hidden || w.role === 'miner') continue;
       const fx = w.x * TILE, fy = w.y * TILE + 4;
       add(fy, () => this.drawWorker(w, fx, fy));
     }
@@ -231,6 +254,7 @@ export class Renderer {
       let cv;
       if (d.cat === 'tree') cv = treeSprite(d.look, null, false, sid);
       else if (d.cat === 'decor') cv = decorSprite(o.type, sid);
+      else if (d.cat === 'debris') cv = debrisSprite(o.type);
       else cv = buildingSprite(o.type);
       cast(cv, X + Wd / 2, Y + Hd - 1);
     }
@@ -238,7 +262,7 @@ export class Renderer {
       if (vis(wd.x * TILE - 48, wd.y * TILE - 48, 112, 80)) cast(wildSprite(wd.k, sid), wd.x * TILE + TILE / 2, wd.y * TILE + TILE - 1);
     }
     for (const b of this.border) if (vis(b.x * TILE - 48, b.y * TILE - 48, 112, 80)) cast(wildSprite(b.k, sid), b.x * TILE + b.ox + 5, b.y * TILE + TILE - 1);
-    for (const w of this.world.state.workers) if (!w._hidden) cast(workerFrame(w.look, hatOf(w), 'd', 'idle', 0), w.x * TILE, w.y * TILE + 3);
+    for (const w of this.world.state.workers) if (!w._hidden && w.role !== 'miner') cast(workerFrame(w.look, hatOf(w), 'd', 'idle', 0), w.x * TILE, w.y * TILE + 3);
     const ctx = this.ctx;
     ctx.save();
     ctx.setTransform(S, 0, 0, S, Math.round((fx - 1) * S), Math.round((fy - 1) * S));
@@ -264,7 +288,16 @@ export class Renderer {
     const cx = X + W / 2, by = Y + H;
     if (o.type === 'plot') {
       const st = o.st === 'empty' ? -1 : o.st === 'ripe' ? 3 : o.p < 0.15 ? 0 : o.p < 0.55 ? 1 : 2;
-      if (st >= 0 && o.crop) {
+      const ga = o.giant && this.world.byId.get(o.giant);
+      if (ga && ga.giant === o.giant && o.crop) {
+        // one giant crop drawn over the whole 3x3 block, from its corner plot
+        if (ga === o) {
+          const cs = cropSprite(o.crop, 3);
+          const sway = Math.sin(t * 1.2 + o.x) * 0.6;
+          ctx.drawImage(cs, X + sway, Y + 3 * TILE - CROP_H * 3, 48, CROP_H * 3);
+          if (Math.random() < 0.02) this.spark(X + Math.random() * 48, Y + Math.random() * 40);
+        }
+      } else if (st >= 0 && o.crop) {
         const cs = cropSprite(o.crop, st);
         // gentle sway: draw the top part shifted
         const sway = Math.round(Math.sin(t * 1.6 + o.x * 0.7 + o.y * 0.3) * 0.8);
@@ -288,6 +321,25 @@ export class Renderer {
       if (same(o.x, o.y - 1)) m |= 1; if (same(o.x + 1, o.y)) m |= 2; if (same(o.x, o.y + 1)) m |= 4; if (same(o.x - 1, o.y)) m |= 8;
       const [x, y] = this.blit(fenceSprite(o.type, m), cx, by + 1, 0);
       this.hits.push({ ref: o, x0: x, y0: y, x1: x + 18, y1: by });
+    } else if (d.cat === 'debris') {
+      const [x, y] = this.blit(debrisSprite(o.type), cx, by - 1, 0);
+      this.hits.push({ ref: o, x0: Math.min(x, X), y0: y, x1: Math.max(x + 16, X + W), y1: by });
+    } else if (o.build > 0) {
+      // going up: a faded outline inside scaffolding, with a progress bar
+      const cv = buildingSprite(o.type);
+      ctx.globalAlpha = moving ? 0.25 : 0.45;
+      const [x, y] = this.blit(cv, cx, by + 1, 0);
+      ctx.globalAlpha = moving ? 0.35 : 1;
+      ctx.fillStyle = '#8a5a32';
+      for (let px = X + 1; px < X + W; px += 9) ctx.fillRect(px, y + 4, 2, by - y - 4);
+      for (let py = by - 6; py > y + 4; py -= 10) ctx.fillRect(X, py, W, 2);
+      ctx.fillStyle = '#c99a5a';
+      for (let py = by - 6; py > y + 4; py -= 10) ctx.fillRect(X, py, W, 1);
+      const f = 1 - o.build / (o.buildT || o.build);
+      ctx.fillStyle = 'rgba(40,24,30,0.7)'; ctx.fillRect(X + 2, by - 5, W - 4, 4);
+      ctx.fillStyle = '#7cc75a'; ctx.fillRect(X + 3, by - 4, Math.round((W - 6) * f), 2);
+      if (Math.random() < 0.03) this.particles.push({ k: 'smoke', x: X + Math.random() * W, y: by - 4, vx: (Math.random() - 0.5) * 6, vy: -5, life: 1, r: 1 });
+      this.hits.push({ ref: o, x0: x, y0: y, x1: x + cv.width, y1: by });
     } else if (d.cat === 'decor') {
       const cv = decorSprite(o.type, this.sid);
       if (d.tall) this.shadow(cx, by - 2, 9, 3);
@@ -691,7 +743,7 @@ export class Renderer {
     }
   }
   petPlan(p) {
-    const r = Math.random(), workers = this.world.state.workers;
+    const r = Math.random(), workers = this.world.state.workers.filter((w) => w.role !== 'miner'); // miners are off at the quarry
     if (r < 0.25 && workers.length) { p.mode = 'follow'; p.target = workers[Math.floor(Math.random() * workers.length)]; p.t = 8 + Math.random() * 10; return; }
     if (r < 0.45) { p.mode = 'nap'; p.f = 3; p.t = 10 + Math.random() * 15; return; }
     if (r < 0.6) { p.mode = 'sit'; p.f = 2; p.t = 3 + Math.random() * 5; return; }
@@ -788,6 +840,67 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  // ---------- the quarry ----------
+  drawQuarry(dt) {
+    this.t += dt;
+    const { ctx, world } = this, s = world.state, q = s.quarry;
+    const S = this.scale;
+    const ox = Math.round(this.cv.width / 2 - this.cam.x * S), oy = Math.round(this.cv.height / 2 - this.cam.y * S);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#3a3634';
+    ctx.fillRect(0, 0, this.cv.width, this.cv.height);
+    ctx.setTransform(S, 0, 0, S, ox, oy);
+    this.hits = [];
+    if (!q) return;
+    ctx.drawImage(quarryGround(s.seed % 1000, q.zones, this.sid), 0, 0);
+    const list = [];
+    const add = (y, fn) => list.push([y, fn]);
+    for (const n of q.nodes) {
+      const X = n.x * TILE + TILE / 2, Y = n.y * TILE + TILE;
+      const dead = n.hp <= 0, locked = n.z >= q.zones;
+      add(Y, () => {
+        if (locked) ctx.globalAlpha = 0.55;
+        this.shadow(X, Y - 1, 7, 2.5);
+        const [x, y] = this.blit(nodeSprite(n.k, dead, this.sid), X, Y, 0);
+        ctx.globalAlpha = 1;
+        if (!locked) this.hits.push({ ref: { qnode: n }, x0: x - 2, y0: y - 2, x1: x + 20, y1: Y + 2 });
+      });
+    }
+    const [cx, cy] = QUARRY.cart;
+    const full = Object.values(s.mats).some((v) => v > 0);
+    add((cy + 1) * TILE, () => { const [x, y] = this.blit(cartSprite(full), (cx + 1) * TILE, (cy + 1) * TILE - 1, 0); this.hits.push({ ref: { qcart: true }, x0: x, y0: y, x1: x + 20, y1: y + 15 }); });
+    add((QUARRY.road - 1) * TILE, () => { const [x, y] = this.blit(signSprite(true), TILE * 0.6, (QUARRY.road) * TILE - 2, 0); this.hits.push({ ref: { qback: true }, x0: x - 4, y0: y - 4, x1: x + 22, y1: y + 22 }); });
+    for (let i = q.zones; i < QZONES.length; i++) {
+      const z = QZONES[i], X = ((z.x0 + z.x1 + 1) / 2) * TILE, Y = QUARRY.road * TILE;
+      add(Y, () => { const [x, y] = this.blit(lockSprite(), X, Y - 2, 0); this.hits.push({ ref: { qzone: i }, x0: x - 12, y0: y - 12, x1: x + 28, y1: y + 28 }); });
+    }
+    for (const w of s.workers) if (w.role === 'miner') { const fx = w.x * TILE, fy = w.y * TILE + 4; add(fy, () => this.drawWorker(w, fx, fy)); }
+    list.sort((a, b) => a[0] - b[0]);
+    for (const [, fn] of list) fn();
+    // unopened zones sit in shade
+    ctx.fillStyle = 'rgba(24,20,28,0.42)';
+    for (let i = q.zones; i < QZONES.length; i++) ctx.fillRect((QZONES[i].x0 - 1) * TILE + 8, 2 * TILE, (QUARRY.w - QZONES[i].x0 + 1) * TILE, (QUARRY.h - 3) * TILE);
+    this.drawParticles(dt);
+    // night falls here too; miners' helmet lamps light the way
+    const dark = this.darkness();
+    if (dark > 0.02) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = `rgba(8,22,50,${Math.min(0.6, dark * 1.1)})`;
+      ctx.fillRect(0, 0, this.cv.width, this.cv.height);
+      ctx.globalCompositeOperation = 'lighter';
+      for (const w of s.workers) if (w.role === 'miner') {
+        const [sx, sy] = this.toScreen(w.x * TILE, w.y * TILE - 6);
+        const R = 26 * this.scale, X = sx * this.dpr, Y = sy * this.dpr;
+        const g = ctx.createRadialGradient(X, Y, 0, X, Y, R);
+        g.addColorStop(0, `rgba(255,200,110,${0.5 * dark})`); g.addColorStop(1, 'rgba(255,200,110,0)');
+        ctx.fillStyle = g; ctx.fillRect(X - R, Y - R, R * 2, R * 2);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    this.drawFloats(dt);
   }
 
   /** Topmost thing under a screen point. */

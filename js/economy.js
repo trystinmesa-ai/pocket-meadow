@@ -4,7 +4,11 @@ import { ACHIEVEMENTS, achReward, HATS, DEFS, ITEMS, CROPS, UPGRADES, upgradeCos
 import { PW, PH, newWorker, initObject, sellPrice, storeCap, effects } from './world.js';
 import { cancelJobsFor, endJob, dropPile, PANTRY } from './sim.js';
 import { seasonAt, festivalOn } from './seasons.js';
-import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS, BUNDLE_ROOMS, BUNDLES, ALL_BUNDLES_REWARD } from './data.js';
+import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS, BUNDLE_ROOMS, BUNDLES, ALL_BUNDLES_REWARD, matsFor, upgMatsFor, buildTime, needsBuilding,
+  QZONES, SHED_MAX, shedCost, QUARRY } from './data.js';
+import { newQuarry, addZone } from './quarry.js';
+import { VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT } from './data.js';
+import { merchantHere, stockOf, soldOut } from './merchant.js';
 
 /** Add earned coins (offline earnings wait in pendingCoins to be collected). */
 export function earn(world, coins, xp = coins) {
@@ -82,11 +86,18 @@ export function place(world, type, x, y, extra = {}) {
   const why = world.canPlace(type, x, y);
   if (why) return why;
   const cost = costOf(world, type);
+  const mats = matsFor(type, world.count(type));
   if (d.ribbons && world.state.ribbons < d.ribbons) return 'Not enough ribbons';
+  if (mats && !world.hasMats(mats)) return `Needs ${matsText(mats, world)}`;
   if (!spend(world, cost)) return 'Not enough coins';
   if (d.ribbons) world.state.ribbons -= d.ribbons;
+  if (mats) world.takeMats(mats);
   const s = world.state;
+  if (d.merchant) { const v = merchantHere(world); if (v) markBought(s, v, `decor:${type}`); }
   const o = initObject({ id: s.nextId++, type, x, y, ...extra });
+  // bigger things take a while to put up (tests and the bot can skip that)
+  const t = world.instantBuild ? 0 : buildTime(type, cost);
+  if (t > 0) { o.build = t; o.buildT = t; o.paid = { coins: cost, mats }; }
   s.objects.push(o);
   world.rebuild();
   world.events.push({ t: 'placed', o, cost });
@@ -127,8 +138,16 @@ export function paySeeds(world, crop) {
   return true;
 }
 
+/** Short text for missing or needed materials, e.g. '12 Wood, 3 more Stone'. */
+/** Needed materials as text; with a world, only what's still missing ('3 more Wood'). */
+export function matsText(m, world) {
+  const list = Object.entries(m).map(([k, n]) => [k, world ? n - world.mat(k) : n]).filter(([, n]) => n > 0);
+  return list.map(([k, n]) => `${world ? `${n} more` : n} ${ITEMS[k].name}`).join(', ');
+}
+
 export function refundOf(world, o) {
   const d = DEFS[o.type];
+  if (o.build > 0 && o.paid) return o.paid.coins; // not finished yet: everything back
   if (d.fixed || d.ribbons) return 0;
   const n = world.count(o.type) - 1;
   const base = typeof d.cost === 'function' ? d.cost(Math.max(0, n)) : d.cost;
@@ -138,11 +157,14 @@ export function refundOf(world, o) {
 export function remove(world, o) {
   const d = DEFS[o.type];
   if (d.fixed) return 'This one stays';
-  if (d.store && world.storages.length <= 1) return 'You need at least one storage building';
-  if (d.store && world.used() > world.capacity - storeCap(o)) return 'Storage is too full to remove this';
-  if (d.houses && world.state.workers.length > world.housing - d.houses) return 'Your farmhands live here';
+  const done = !(o.build > 0);
+  if (done && d.store && world.storages.length <= 1) return 'You need at least one storage building';
+  if (done && d.store && world.used() > world.capacity - storeCap(o)) return 'Storage is too full to remove this';
+  if (done && d.houses && world.state.workers.length > world.housing - d.houses) return 'Your farmhands live here';
   const s = world.state;
   cancelJobsFor(world, o.id);
+  if (!done && o.paid?.mats) world.refundMats(o.paid.mats);
+  if (d.gives) for (const k in d.gives) world.addMat(k, d.gives[k]); // clearing debris by hand
   // return stocked goods
   if (o.inp) for (const k in o.inp) world.addItem(k, o.inp[k]);
   if (o.out && typeof o.out === 'object') for (const k in o.out) world.addItem(k, o.out[k]);
@@ -172,7 +194,11 @@ export function upgradeBuilding(world, o) {
   const d = DEFS[o.type];
   if (!d.upg) return 'Can’t upgrade this';
   if (o.lvl >= d.maxLvl) return 'Already at max level';
+  if (o.build > 0) return 'Still being built';
+  const mats = upgMatsFor(o);
+  if (mats && !world.hasMats(mats)) return `Needs ${matsText(mats, world)}`;
   if (!spend(world, bUpgradeCost(o))) return 'Not enough coins';
+  if (mats) world.takeMats(mats);
   o.lvl++;
   world.rebuild();
   return '';
@@ -216,6 +242,7 @@ export const nextHireCost = (world) => hireCost(world.state.workers.length);
 export function hire(world, role) {
   const s = world.state;
   if (s.workers.length >= world.housing) return 'Build a cottage for more room';
+  if (role === 'miner' && !s.quarry) return 'Find the quarry trail first';
   if (!spend(world, nextHireCost(world))) return 'Not enough coins';
   const w = newWorker(s, role);
   world.events.push({ t: 'hired', w });
@@ -232,7 +259,9 @@ export function fire(world, w) {
   const i = s.workers.indexOf(w);
   if (i < 0) return '';
   endJob(world, w);
-  if (w.carry) dropPile(world, w, Math.floor(w.x), Math.floor(w.y));
+  if (w.carry && w.role === 'miner') world.refundMats({ [w.carry.item]: w.carry.qty });
+  else if (w.carry) dropPile(world, w, Math.floor(w.x), Math.floor(w.y));
+  if (w._q?.node) delete w._q.node._c;
   s.coins += fireRefund(world);
   s.workers.splice(i, 1);
   world.events.push({ t: 'fired', w });
@@ -261,6 +290,167 @@ export function buyParcel(world, px, py) {
   return '';
 }
 
+// ---------- quarry & material shed ----------
+/** Edge parcels lead to the quarry trail. */
+export const trailParcels = (world) => {
+  const out = [];
+  for (let py = 0; py < PH; py++) for (let px = 0; px < PW; px++) {
+    if (!world.state.map.owned[py * PW + px]) continue;
+    if (px === 0) out.push({ px, py, side: 'w' });
+    if (px === PW - 1) out.push({ px, py, side: 'e' });
+    if (py === 0) out.push({ px, py, side: 'n' });
+    if (py === PH - 1) out.push({ px, py, side: 's' });
+  }
+  return out;
+};
+export function discoverQuarry(world) {
+  const s = world.state;
+  if (s.quarry) return '';
+  if (!trailParcels(world).length) return 'Buy land at the edge of the map to find the trail';
+  s.quarry = newQuarry(s.seed);
+  world.events.push({ t: 'quarry' });
+  return '';
+}
+export function zoneBlock(world, i) {
+  const s = world.state, z = QZONES[i];
+  if (!s.quarry) return 'Find the quarry first';
+  if (i < s.quarry.zones) return 'Already open';
+  if (i > s.quarry.zones) return `Open ${QZONES[i - 1].name} first`;
+  if (s.level < z.level) return `Reach farm level ${z.level}`;
+  return '';
+}
+export function openZone(world, i) {
+  const why = zoneBlock(world, i);
+  if (why) return why;
+  const z = QZONES[i];
+  if (z.mats && !world.hasMats(z.mats)) return `Needs ${matsText(z.mats, world)}`;
+  if (!spend(world, z.cost)) return 'Not enough coins';
+  if (z.mats) world.takeMats(z.mats);
+  addZone(world.state.quarry, i, world.state.seed);
+  world.events.push({ t: 'zone', i });
+  return '';
+}
+export function upgradeShed(world) {
+  const s = world.state;
+  if ((s.shed || 1) >= SHED_MAX) return 'The shed is as big as it gets';
+  const c = shedCost(s.shed || 1);
+  if (!world.hasMats(c.mats)) return `Needs ${matsText(c.mats, world)}`;
+  if (!spend(world, c.coins)) return 'Not enough coins';
+  world.takeMats(c.mats);
+  s.shed = (s.shed || 1) + 1;
+  return '';
+}
+/** Sell materials you don't need (they sell for their base value). */
+export function sellMat(world, k, n) {
+  const got = Math.min(n, world.mat(k));
+  if (got <= 0) return 0;
+  world.takeMats({ [k]: got });
+  const coins = got * ITEMS[k].value;
+  earn(world, coins);
+  return coins;
+}
+
+// ---------- neighbours ----------
+/** The gift for reaching heart h (1-5) with a villager. Five hearts also adds their lasting favour. */
+export function heartGift(v, h) {
+  return [{ coins: 500 }, { ribbons: 3 }, v.gift, { coins: 10000 }, { perk: true }][h - 1];
+}
+/** Points an order earns with its villager: 2, plus 1 for each of their favourite things in it (up to 3). */
+export const friendPoints = (order) => {
+  const v = VILLAGERS.find((x) => x.id === order.who);
+  return v ? 2 + Math.min(3, order.items.filter((x) => v.likes.includes(x.item)).length) : 0;
+};
+function befriend(world, order) {
+  const s = world.state, v = VILLAGERS.find((x) => x.id === order.who);
+  if (!v) return;
+  const before = heartsOf(s.friends[v.id]);
+  s.friends[v.id] = Math.min(HEARTS[HEARTS.length - 1], (s.friends[v.id] || 0) + friendPoints(order));
+  const after = heartsOf(s.friends[v.id]);
+  for (let h = before + 1; h <= after; h++) {
+    const g = heartGift(v, h);
+    if (g.coins) earn(world, g.coins, 0);
+    if (g.ribbons) s.ribbons += g.ribbons;
+    if (g.hat) s.hats[g.hat] = true;
+    world.events.push({ t: 'heart', who: v.id, h, gift: g });
+  }
+  if (after > before) world.rebuild();
+}
+
+// ---------- village restoration ----------
+export function projectState(world, id) {
+  const s = world.state, p = PROJECTS.find((x) => x.id === id), given = s.village.give[id] || {};
+  const slots = Object.entries(p.needs).map(([k, need]) => {
+    const got = Math.min(need, given[k] || 0);
+    const have = k === 'coins' ? Math.max(0, Math.floor(s.coins)) : ITEMS[k].mat ? world.mat(k) : world.haveAll(k);
+    return { k, need, got, left: need - got, have };
+  });
+  const done = !!s.village.done[id], open = s.level >= p.level;
+  return { p, slots, done, open,
+    canGive: open && !done && slots.some((x) => x.k !== 'coins' && x.left && x.have),
+    canPay: open && !done && slots.some((x) => x.k === 'coins' && x.left && x.have) };
+}
+/** Give the goods and materials you have toward a project (or, with coins, pay toward it). Finishing it applies its reward. */
+export function giveProject(world, id, coins = false) {
+  const s = world.state, st = projectState(world, id);
+  if (!st.open) return `Opens at farm level ${st.p.level}`;
+  if (st.done) return 'Already restored';
+  const given = (s.village.give[id] ||= {});
+  let n = 0;
+  for (const x of st.slots) {
+    if ((x.k === 'coins') !== coins) continue;
+    const q = Math.min(x.left, x.have);
+    if (q <= 0) continue;
+    if (x.k === 'coins') s.coins -= q;
+    else if (ITEMS[x.k].mat) world.takeMats({ [x.k]: q });
+    else world.takeAll(x.k, q);
+    given[x.k] = (given[x.k] || 0) + q;
+    n += q;
+  }
+  if (!n) return coins ? 'No coins to spare' : 'Nothing to give yet';
+  if (Object.entries(st.p.needs).every(([k, q]) => (given[k] || 0) >= q)) {
+    s.village.done[id] = true;
+    delete s.village.give[id];
+    world.rebuild();
+    world.events.push({ t: 'project', id });
+  }
+  return '';
+}
+
+// ---------- gold-star produce ----------
+export const goldPrice = (world, crop) => sellPrice(world, crop) * GOLD_MULT;
+export function sellGold(world, crop, n) {
+  const s = world.state, got = Math.min(n, s.gold[crop] || 0);
+  if (got <= 0) return 0;
+  s.gold[crop] -= got; if (!s.gold[crop]) delete s.gold[crop];
+  s.stats.goldSold = (s.stats.goldSold || 0) + got;
+  const coins = goldPrice(world, crop) * got;
+  s.stats.soldCoins += coins;
+  earn(world, coins);
+  return coins;
+}
+
+// ---------- travelling merchant ----------
+export function buyOffer(world, key, now = Date.now()) {
+  const s = world.state, v = merchantHere(world, now);
+  if (!v) return 'The merchant isn’t here right now';
+  const offer = stockOf(v.k).find((o) => o.key === key);
+  if (!offer) return 'Not for sale this visit';
+  if (soldOut(s, v, key)) return 'Sold out';
+  const [kind, id, n] = key.split(':');
+  if (kind === 'decor') return 'Pick a spot for it on the farm';
+  if (kind === 'mat' && world.mat(id) + +n > world.shedCap) return 'Not enough room in the material shed';
+  if (!spend(world, offer.price)) return 'Not enough coins';
+  if (kind === 'mat') world.addMat(id, +n);
+  if (kind === 'hat') s.hats[id] = true;
+  if (kind === 'perk') { s.perks[id] = true; world.rebuild(); }
+  markBought(s, v, key);
+  return '';
+}
+function markBought(s, v, key) {
+  if (!s.merchant || s.merchant.k !== v.k) s.merchant = { k: v.k, bought: [] };
+  s.merchant.bought.push(key);
+}
+
 // ---------- orders ----------
 export function canFill(world, order) {
   return order.items.every((x) => world.haveAll(x.item) >= x.qty);
@@ -271,6 +461,7 @@ export function fillOrder(world, order) {
   for (const x of order.items) world.takeAll(x.item, x.qty);
   s.orders.splice(s.orders.indexOf(order), 1);
   s.stats.orders++;
+  befriend(world, order);
   earn(world, order.reward, order.reward + order.xp);
   if (s.orders.length < 3) s.nextOrderAt = Math.min(s.nextOrderAt, Date.now() + 2 * 60 * 1000);
   return '';
@@ -323,6 +514,7 @@ export function hatUnlocked(s, id) {
 export function buyHat(world, id) {
   const h = HATS[id];
   if (!h || !(h.cost || h.ribbons)) return 'This hat is earned, not bought';
+  if (h.merchant) return buyOffer(world, `hat:${id}`);
   if (world.state.hats[id]) return '';
   if (h.ribbons) {
     const why = seasonalBlock(world, h);
@@ -392,6 +584,10 @@ export function giveBundle(world, id, only) {
 export function seasonalBlock(world, d, now = Date.now()) {
   const season = seasonAt(now);
   if (d.bundle && !bundleDone(world.state, d.bundle)) return `Reward from the ${bundleLabel(d.bundle)}`;
+  if (d.merchant) {
+    const v = merchantHere(world, now), key = `${HATS[d.id] === d ? 'hat' : 'decor'}:${d.id}`;
+    if (!v || !stockOf(v.k).some((o) => o.key === key) || soldOut(world.state, v, key)) return 'Only from the travelling merchant';
+  }
   if (d.season && d.season !== season.id) return `Only sold in ${SEASONS.find((x) => x.id === d.season).name}`;
   if (d.festival) {
     if (!festivalOn(now)) return 'Only sold during a festival weekend';

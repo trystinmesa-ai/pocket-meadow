@@ -365,6 +365,20 @@ const DECOR = {
     P.oval(4, 4, 8, 7, C.goldL); P.px(6, 7, C.goldD); P.px(9, 7, C.goldD); P.hl(6, 9, 4, C.goldD);
     P.r(2, 3, 12, 2, C.goldD); P.r(4, 0, 8, 4, C.gold); P.hl(4, 3, 8, C.red);
   }],
+  geode: [16, 14, (P) => {
+    P.oval(0, 4, 16, 10, C.stoneD); P.oval(1, 3, 14, 9, C.stone); P.oval(3, 5, 10, 6, '#4a3a6a');
+    for (const [x, y, c] of [[5, 5, '#9a7ae0'], [8, 4, '#c8a8ff'], [10, 6, '#7a5ac0'], [6, 8, '#b898f0'], [9, 8, '#e0d0ff']]) { P.r(x, y, 2, 3, c); P.px(x, y, '#ffffff'); }
+  }],
+  starlamp: [12, 30, (P) => {
+    P.vl(5, 10, 20, C.woodDD); P.vl(6, 10, 20, C.woodD); P.r(3, 28, 6, 2, C.woodDD);
+    P.r(2, 2, 8, 9, '#3a4a7a'); P.r(3, 3, 6, 7, C.glow); P.px(5, 5, '#ffffff'); P.px(6, 6, '#fff4b0'); P.px(4, 7, '#fff4b0'); P.px(7, 4, '#fff4b0');
+    P.hl(1, 1, 10, '#2a3a6a'); P.px(5, 0, C.gold); P.px(6, 0, C.gold); P.hl(2, 11, 8, '#2a3a6a');
+  }],
+  rug: [32, 14, (P) => {
+    P.r(1, 3, 30, 10, '#a83a3a'); P.r(3, 5, 26, 6, '#e8b040'); P.r(5, 7, 22, 2, '#3a6a9a');
+    for (let x = 1; x < 31; x += 3) { P.px(x, 2, C.cream); P.px(x, 13, C.cream); }
+    for (const x of [8, 16, 24]) { P.px(x, 6, '#a83a3a'); P.px(x, 9, '#a83a3a'); }
+  }],
 };
 
 export function decorSprite(type, season = 'summer') {
