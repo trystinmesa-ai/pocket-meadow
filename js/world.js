@@ -196,6 +196,24 @@ export class World {
     return got;
   }
 
+  // Goods you can use anywhere: storage plus what sits in workshops (made goods
+  // waiting for pickup and pantry stock). Workshops that are switched off give
+  // theirs up first, and the recipe a workshop is making right now gives last.
+  inBuildings(item) { let n = 0; for (const b of this.bldgs) n += (b.out[item] || 0) + (b.inp[item] || 0); return n; }
+  haveAll(item) { return this.have(item) + this.inBuildings(item); }
+  takeAll(item, qty) {
+    let got = this.takeItem(item, qty);
+    const uses = (b) => { const r = DEFS[b.type].recipes.find((x) => x.out === b.cur); return !b.off && r && r.in[item] ? 1 : 0; };
+    const list = this.bldgs.filter((b) => b.out[item] || b.inp[item]).sort((a, b) => uses(a) - uses(b) || (b.off ? 1 : 0) - (a.off ? 1 : 0));
+    for (const box of ['out', 'inp']) for (const b of list) {
+      const t = Math.min(qty - got, b[box][item] || 0);
+      if (t <= 0) continue;
+      b[box][item] -= t; if (!b[box][item]) delete b[box][item];
+      got += t;
+    }
+    return got;
+  }
+
   count(type) { let n = 0; for (const o of this.state.objects) if (o.type === type) n++; return n; }
 
   // ---------- placement ----------

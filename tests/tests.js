@@ -452,7 +452,7 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   const D = await import('../js/data.js');
   const w = empty(), s = w.state;
   rich(w, 20, 1000);
-  ok(E.giveBundle(w, 'starter') === 'Nothing in storage to give', 'An empty barn has nothing to give');
+  ok(E.giveBundle(w, 'starter') === 'Nothing on the farm to give', 'An empty barn has nothing to give');
   w.addItem('wheat', 25); w.addItem('carrot', 5);
   E.giveBundle(w, 'starter');
   ok(s.bundles.give.starter.wheat === 20 && w.have('wheat') === 5 && s.bundles.give.starter.carrot === 5, 'Giving takes only what the bundle still needs');
@@ -504,6 +504,43 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   w2.state.settings.helpers = false;
   run(w2, 400, true);
   ok((mill.inp.wheat || 0) + (mill.out.flour || 0) + (w2.state.stats.craft.flour || 0) > 0 && (mill.inp.wheat || 0) <= S.pantryCap(mill), 'Wheat goes into the mill’s pantry', JSON.stringify(mill.inp));
+}
+
+// 26. switching buildings off, and pantry stock usable anywhere
+{
+  const S = await import('../js/sim.js');
+  const w = empty(), s = w.state;
+  rich(w, 20, 1e6);
+  const put = (type) => { for (let y = 10; y < 34; y++) for (let x = 8; x < 40; x++) if (E.place(w, type, x, y) === '') return w.objAt(x, y); };
+  const a = put('bakery'), b = put('bakery'), coop = put('coop');
+  newWorker(s, 'hauler', 'Bea'); newWorker(s, 'artisan', 'Art');
+  for (const wk of s.workers) { wk.x = 20.5; wk.y = 20.5; }
+  w.rebuild();
+  a.off = true; a.inp = { flour: 10, egg: 4 };
+  coop.off = true; coop.feed = 3;
+  b.recipe = 'bread';
+  ok(S.pantryWant(w, a, 'flour') === 0, 'A switched-off workshop wants no ingredients');
+  ok(w.haveAll('flour') === 10 && w.have('flour') === 0, 'Pantry stock counts as yours', `${w.haveAll('flour')}`);
+  run(w, 300, true);
+  ok((s.stats.craft.bread || 0) > 0 && (a.inp.flour || 0) < 10, 'Haulers carry flour from a switched-off bakery to one that needs it', `bread ${s.stats.craft.bread}, left ${JSON.stringify(a.inp)}`);
+  ok(coop.feed === 3 && coop.out === 0, 'A switched-off coop rests and doesn’t eat', `feed ${coop.feed} out ${coop.out}`);
+  // a workshop not using an ingredient right now shares it with one that is
+  const w2 = empty(); rich(w2, 20, 1e6);
+  const put2 = (type) => { for (let y = 10; y < 34; y++) for (let x = 8; x < 40; x++) if (E.place(w2, type, x, y) === '') return w2.objAt(x, y); };
+  const c = put2('bakery'), d = put2('bakery');
+  newWorker(w2.state, 'hauler', 'Bea'); w2.state.workers[0].x = 20.5; w2.state.workers[0].y = 20.5; w2.rebuild();
+  c.recipe = 'cornbread'; c.inp = { flour: 6 }; d.recipe = 'bread'; d.inp = { egg: 2 };
+  run(w2, 120, true);
+  ok((d.inp.flour || 0) > 0, 'Spare flour moves to the bakery making bread', JSON.stringify(d.inp));
+  // orders, selling and bundles reach into pantries
+  const w3 = empty(); rich(w3, 20, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w3, 'mill', x, y) === '') mill = w3.objAt(x, y);
+  w3.rebuild(); mill.off = true; mill.inp = { wheat: 30 }; w3.addItem('wheat', 2);
+  const order = { id: 999, from: 'Test', items: [{ item: 'wheat', qty: 10 }], reward: 50, xp: 5 };
+  w3.state.orders.push(order);
+  ok(E.canFill(w3, order) && E.fillOrder(w3, order) === '' && w3.have('wheat') === 0 && mill.inp.wheat === 22, 'Orders use storage first, then the mill’s pantry', JSON.stringify(mill.inp));
+  const c0 = w3.state.coins;
+  ok(E.sell(w3, 'wheat', 5) > 0 && mill.inp.wheat === 17 && w3.state.coins > c0, 'Selling reaches into a pantry', JSON.stringify(mill.inp));
 }
 
 // ---- report ----

@@ -20,6 +20,7 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #2f5a2c; color: var(--ink); font-family: var(--font); font-size: 15px; overscroll-behavior: none; }
 body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 button, input, select { font: inherit; color: inherit; }
@@ -55,7 +56,7 @@ img.ava { width: 36px; height: 48px; image-rendering: pixelated; object-fit: con
 .sync.ok { background: #6fc35a; } .sync.syncing { background: var(--gold); } .sync.offline { background: #c9c0b0; } .sync.error { background: var(--red); }
 @keyframes pulse { to { transform: scale(1.04); } }
 
-#goal { position: fixed; top: calc(var(--safe-t) + 46px); left: 8px; max-width: min(420px, calc(100% - 16px)); display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 14px; z-index: 4; }
+#goal { position: fixed; top: calc(var(--safe-t) + 14px + var(--hud-h, 32px)); left: 8px; max-width: min(420px, calc(100% - 16px)); display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 14px; z-index: 4; }
 #goal[hidden] { display: none; }
 #goal .gt { display: flex; gap: 5px; align-items: center; flex: 1; }
 #goal .gp { font-weight: 700; white-space: nowrap; }
@@ -70,6 +71,13 @@ img.ava { width: 36px; height: 48px; image-rendering: pixelated; object-fit: con
 #dock button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 0 4px; border: 0; border-radius: 4px; background: transparent; color: #fff6dc; font-size: 11px; cursor: pointer; position: relative; text-shadow: 0 1px 0 var(--ink); }
 #dock button.on, #dock button:active { background: rgba(53,35,42,.28); }
 #dock button span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+#dock button .short { display: none; }
+@media (max-width: 480px) {
+  #dock button { font-size: 9.5px; }
+  #dock button .short { display: inline; }
+  #dock button .long.cut { display: none; }
+}
+@media (max-width: 340px) { #dock button { font-size: 9px; } }
 .badge { position: absolute; top: 0; right: 14%; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--red); color: #fff; font-size: 11px; font-style: normal; line-height: 13px; border: 1.5px solid var(--ink); }
 .badge:empty { display: none; }
 
@@ -196,7 +204,7 @@ form.signin { display: flex; flex-direction: column; gap: 6px; }
 body.placing #goal { display: none; }
 
 /* ---------- toasts ---------- */
-#toasts { position: fixed; z-index: 20; top: calc(var(--safe-t) + 84px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(420px, calc(100% - 24px)); }
+#toasts { position: fixed; z-index: 20; top: calc(var(--safe-t) + 52px + var(--hud-h, 32px)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(420px, calc(100% - 24px)); }
 .toast { padding: 6px 12px 8px; font-size: 14px; font-weight: 600; text-align: center; animation: pop .2s ease-out; transition: opacity .4s, transform .4s; }
 .toast.good { background: #eefad8; }
 .toast.bad { background: #ffe1d8; }
@@ -273,3 +281,6 @@ body.placing #goal { display: none; }
 .pslots { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 13px; }
 .pi-slot { display: inline-flex; align-items: center; gap: 2px; background: #fff4da; border-radius: 3px; padding: 1px 4px; }
 .pi-slot.empty { opacity: 0.45; }
+.power { margin: 0 0 4px; }
+.power.off b { color: #a8432f; }
+.inb { color: var(--ink2, #7a6a55); font-size: 0.85em; }

@@ -26,7 +26,7 @@ export function addFarmXp(world, xp) {
 }
 
 export function sell(world, item, qty) {
-  const got = world.takeItem(item, qty);
+  const got = world.takeAll(item, qty);
   if (!got) return 0;
   const coins = sellPrice(world, item) * got;
   const st = world.state.stats;
@@ -263,12 +263,12 @@ export function buyParcel(world, px, py) {
 
 // ---------- orders ----------
 export function canFill(world, order) {
-  return order.items.every((x) => world.have(x.item) >= x.qty);
+  return order.items.every((x) => world.haveAll(x.item) >= x.qty);
 }
 export function fillOrder(world, order) {
   const s = world.state;
-  if (!canFill(world, order)) return 'Not enough in storage';
-  for (const x of order.items) world.takeItem(x.item, x.qty);
+  if (!canFill(world, order)) return 'Not enough on the farm';
+  for (const x of order.items) world.takeAll(x.item, x.qty);
   s.orders.splice(s.orders.indexOf(order), 1);
   s.stats.orders++;
   earn(world, order.reward, order.reward + order.xp);
@@ -347,7 +347,7 @@ export function bundleState(world, id) {
   const s = world.state, b = BUNDLES[id], given = s.bundles.give[id] || {};
   const slots = Object.entries(b.items).map(([item, need]) => {
     const got = Math.min(need, given[item] || 0);
-    return { item, need, got, left: need - got, have: world.have(item) };
+    return { item, need, got, left: need - got, have: world.haveAll(item) };
   });
   const done = bundleDone(s, id), open = s.level >= b.level;
   return { b, slots, done, open, canGive: open && !done && slots.some((x) => x.left && x.have), ready: open && !done && slots.every((x) => x.have >= x.left) };
@@ -370,11 +370,11 @@ export function giveBundle(world, id, only) {
   let n = 0;
   for (const x of st.slots) {
     if (only && x.item !== only) continue;
-    const q = world.takeItem(x.item, Math.min(x.left, x.have));
+    const q = world.takeAll(x.item, Math.min(x.left, x.have));
     given[x.item] = (given[x.item] || 0) + q;
     n += q;
   }
-  if (!n) return 'Nothing in storage to give';
+  if (!n) return 'Nothing on the farm to give';
   const ev = { t: 'bundle', id, n, done: [] };
   if (Object.entries(st.b.items).every(([k, q]) => (given[k] || 0) >= q)) {
     s.bundles.done[id] = true; grant(world, st.b.reward); ev.done.push(id);
@@ -402,8 +402,8 @@ export function seasonalBlock(world, d, now = Date.now()) {
 export function fillFestOrder(world, order, now = Date.now()) {
   const s = world.state;
   if (!s.fest || !festivalOn(now)) return 'The festival is over';
-  if (!canFill(world, order)) return 'Not enough in storage';
-  for (const x of order.items) world.takeItem(x.item, x.qty);
+  if (!canFill(world, order)) return 'Not enough on the farm';
+  for (const x of order.items) world.takeAll(x.item, x.qty);
   s.fest.orders.splice(s.fest.orders.indexOf(order), 1);
   s.ribbons += order.ribbons;
   s.stats.festOrders = (s.stats.festOrders || 0) + 1;

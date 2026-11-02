@@ -114,11 +114,11 @@ export class UI {
       <button class="res season" id="h-season" data-act="sheet" data-v="season" aria-label="Season and festival"></button>
       <span class="res wx" id="h-wx"></span>`;
     const dock = [
-      ['build', 'hammer', 'Build'], ['workers', 'people', 'Farmhands'], ['market', 'market', 'Market'],
-      ['orders', 'scroll', 'Orders'], ['journal', 'book', 'Journal'], ['upgrades', 'up', 'Upgrades'], ['land', 'map', 'Land'], ['menu', 'menu', 'Menu'],
+      ['build', 'hammer', 'Build'], ['workers', 'people', 'Farmhands', 'Crew'], ['market', 'market', 'Market'],
+      ['orders', 'scroll', 'Orders'], ['journal', 'book', 'Journal'], ['upgrades', 'up', 'Upgrades', 'Perks'], ['land', 'map', 'Land'], ['menu', 'menu', 'Menu'],
     ];
-    $('#dock').innerHTML = dock.map(([id, ic, name]) =>
-      `<button data-act="${id === 'land' ? 'landmode' : 'sheet'}" data-v="${id}" id="d-${id}">${img(ic, 'pi big')}<span>${name}</span><em class="badge" id="b-${id}"></em></button>`).join('');
+    $('#dock').innerHTML = dock.map(([id, ic, name, short]) =>
+      `<button data-act="${id === 'land' ? 'landmode' : 'sheet'}" data-v="${id}" id="d-${id}" aria-label="${name}">${img(ic, 'pi big')}<span class="long${short ? ' cut' : ''}">${name}</span>${short ? `<span class="short">${short}</span>` : ''}<em class="badge" id="b-${id}"></em></button>`).join('');
     for (const el of ['#hud', '#dock', '#sheet', '#card', '#placebar', '#goal', '#modal', '#zoom']) {
       $(el).addEventListener('click', (e) => {
         const b = e.target.closest('[data-act]');
@@ -160,6 +160,7 @@ export class UI {
       case 'deselect': this.select(null); break;
       case 'move': this.setMode({ k: 'move', obj: this.sel, x: this.sel.x, y: this.sel.y }); this.select(null, true); break;
       case 'remove': this.askRemove(this.sel); break;
+      case 'toggleoff': this.sel.off = !this.sel.off; if (!this.sel.off) delete this.sel.off; this.toast(`${DEFS[this.sel.type].name} switched ${this.sel.off ? 'off' : 'on'}`); this.g.dirty(); this.renderCard(); break;
       case 'upgradepantry': if (fail(E.upgradePantry(w, this.sel))) { this.toast(`Pantry now holds ${pantryCap(this.sel)} ingredients`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'upgradeb': if (fail(E.upgradeBuilding(w, this.sel))) { this.toast(`${DEFS[this.sel.type].name} upgraded to level ${this.sel.lvl}!`, 'good'); this.g.dirty(); this.renderCard(); } break;
       case 'recipe': this.sel.recipe = d.value; curRecipe(w, this.sel); this.g.dirty(); this.renderCard(); break;
@@ -176,7 +177,7 @@ export class UI {
       case 'rename': this.rename(+d.id); break;
       case 'helpers': s.settings.helpers = !!d.checked; this.g.dirty(); break;
       // market
-      case 'sell': { const n = d.n === 'all' ? w.have(d.item) : +d.n; const c = E.sell(w, d.item, n); if (c) { this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
+      case 'sell': { const n = d.n === 'all' ? w.haveAll(d.item) : +d.n; const c = E.sell(w, d.item, n); if (c) { this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
       case 'sellcrops': { let c = 0; for (const k in s.inv) if (CROPS[k] && s.autoSell[k] === undefined) c += E.sell(w, k, w.have(k)); if (c) { this.toast(`Sold crops for ${fmt(c)} coins`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
       case 'auto': if (s.autoSell[d.item] === undefined) s.autoSell[d.item] = 0; else delete s.autoSell[d.item]; E.autoSellItem(w, d.item); this.g.dirty(); this.renderSheet(); break;
       case 'reserve': { const v = Math.max(0, (s.autoSell[d.item] || 0) + +d.n); s.autoSell[d.item] = v; this.g.dirty(); this.renderSheet(); break; }
@@ -431,7 +432,7 @@ export class UI {
       const orders = s.fest ? s.fest.orders : [];
       for (const o of orders) {
         const ok = E.canFill(w, o);
-        html += `<div class="order fest ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} needs for the fair:</div><div class="oi">${o.items.map((x) => `<span class="need ${w.have(x.item) >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b>${fmt(Math.min(w.have(x.item), x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}</span>`).join('')}</div>
+        html += `<div class="order fest ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} needs for the fair:</div><div class="oi">${o.items.map((x) => `<span class="need ${w.haveAll(x.item) >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b>${fmt(Math.min(w.haveAll(x.item), x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}</span>`).join('')}</div>
           <div class="row"><span>${ribbon(o.ribbons)} + ${coin(o.reward)}</span><button class="btn small green" data-act="fillfest" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></div></div>`;
       }
       if (!orders.length) html += '<p class="hint">New festival orders are on their way.</p>';
@@ -459,7 +460,7 @@ export class UI {
 
   sheet_market() {
     const w = this.w, s = this.s;
-    const items = Object.keys(ITEMS).filter((k) => w.have(k) > 0 || s.autoSell[k] !== undefined);
+    const items = Object.keys(ITEMS).filter((k) => w.haveAll(k) > 0 || s.autoSell[k] !== undefined);
     const used = w.used();
     let html = `<div class="store"><div class="bar big ${used >= w.capacity ? 'full' : ''}"><i style="width:${Math.min(100, (used / w.capacity) * 100)}%"></i></div>
       <span data-live="store">${fmt(used)} / ${fmt(w.capacity)} stored</span><span class="hint">Prices +${Math.round((w.fx.sell - 1) * 100)}% from haggling & charm</span></div>`;
@@ -468,7 +469,7 @@ export class UI {
     html += '<div class="list">';
     for (const k of items) {
       const auto = s.autoSell[k];
-      html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="q${k}">${fmt(w.have(k))}</b> · ${coin(sellPrice(w, k))} each</div></div>
+      html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="q${k}">${this.qtyText(k)}</b> · ${coin(sellPrice(w, k))} each</div></div>
         <div class="ib"><button class="btn small" data-act="sell" data-item="${k}" data-n="1">Sell 1</button><button class="btn small gold" data-act="sell" data-item="${k}" data-n="all">All</button></div>
         <div class="ia"><label class="check"><input type="checkbox" data-chg="auto" data-item="${k}" ${auto !== undefined ? 'checked' : ''}> Auto-sell</label>
         ${auto !== undefined ? `<span class="keep">keep <button class="btn tiny" data-act="reserve" data-item="${k}" data-n="-5">−</button><b>${auto}</b><button class="btn tiny" data-act="reserve" data-item="${k}" data-n="5">+</button></span>` : ''}</div></div>`;
@@ -478,8 +479,12 @@ export class UI {
   }
   live_market() {
     const w = this.w, out = { store: `${fmt(w.used())} / ${fmt(w.capacity)} stored` };
-    for (const k in this.s.inv) out[`q${k}`] = fmt(w.have(k));
+    for (const k in ITEMS) if (w.haveAll(k)) out[`q${k}`] = this.qtyText(k);
     return out;
+  }
+  qtyText(k) {
+    const n = this.w.inBuildings(k);
+    return fmt(this.w.haveAll(k)) + (n ? ` <span class="inb">(${fmt(n)} in workshops)</span>` : '');
   }
 
   sheet_orders() {
@@ -489,7 +494,7 @@ export class UI {
     for (const o of s.orders) {
       const ok = E.canFill(w, o);
       html += `<div class="order ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} would like:</div><div class="oi">${o.items.map((x) => {
-        const have = w.have(x.item);
+        const have = w.haveAll(x.item);
         return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}</span>`;
       }).join('')}</div>
         <div class="row"><span>Reward ${coin(o.reward)} <span class="xp">+${fmt(o.xp)} XP</span></span>
@@ -505,7 +510,7 @@ export class UI {
   }
   live_orders() {
     const w = this.w, out = { next: this.nextOrderText() };
-    for (const o of this.s.orders) for (const x of o.items) out[`o${o.id}${x.item}`] = `${fmt(Math.min(w.have(x.item), x.qty))}/${x.qty}`;
+    for (const o of this.s.orders) for (const x of o.items) out[`o${o.id}${x.item}`] = `${fmt(Math.min(w.haveAll(x.item), x.qty))}/${x.qty}`;
     return out;
   }
 
@@ -556,7 +561,7 @@ export class UI {
   bundlesHTML() {
     const w = this.w, s = this.s, sea = seasonAt(Date.now());
     const total = BUNDLE_ROOMS.reduce((n, r) => n + r.bundles.length, 0), done = Object.keys(s.bundles.done).filter((k) => !k.includes(':') && k !== 'all').length;
-    let html = `<p class="hint">The village pantry: give goods from storage to fill bundles and earn rewards. Fill a whole shelf for a lasting bonus. Seasonal crops only grow in their season, so save some for these. <b>${done} / ${total}</b> bundles done.</p>`;
+    let html = `<p class="hint">The village pantry: give goods from storage or your workshops to fill bundles and earn rewards. Fill a whole shelf for a lasting bonus. Seasonal crops only grow in their season, so save some for these. <b>${done} / ${total}</b> bundles done.</p>`;
     for (const r of BUNDLE_ROOMS) {
       const rd = E.bundleDone(s, `room:${r.id}`), n = r.bundles.filter((b) => s.bundles.done[b.id]).length;
       html += `<h3>${img(r.icon)} ${r.name} <small class="shelf">${n}/${r.bundles.length}</small></h3>
@@ -747,6 +752,7 @@ export class UI {
     const upBtn = d.upg ? (o.lvl >= d.maxLvl ? '<span class="max">MAX LEVEL</span>'
       : `<button class="btn small green" data-act="upgradeb" data-need="${E.bUpgradeCost(o)}">${img('up')} Upgrade ${coin(E.bUpgradeCost(o))}</button>`) : '';
     const lvl = o.lvl ? ` <span class="lv">Lv ${o.lvl}${d.maxLvl ? `/${d.maxLvl}` : ''}</span>` : '';
+    const power = `<div class="row power ${o.off ? 'off' : ''}"><span><b>${o.off ? 'Switched off' : 'Working'}</b></span><button class="btn small ${o.off ? 'green' : ''}" data-act="toggleoff">${o.off ? 'Turn on' : 'Turn off'}</button></div>`;
     const base = { icon: `<img class="thumb" src="${thumb(o.type, o.crop)}" alt="">`, title: d.name + lvl, btns: upBtn + moveBtn + rmBtn };
     if (o.type === 'plot' && !o.crop) return this.bareCard(o, base, moveBtn, rmBtn);
     if (o.type === 'plot') {
@@ -783,7 +789,8 @@ export class UI {
         const r = curRecipe(w, o);
         const n = outTotal(o);
         let st;
-        if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%`;
+        if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%${o.off ? ' (stops after this one)' : ''}`;
+        else if (o.off) st = 'Not making anything. Its pantry can still be used for orders, selling and other workshops.';
         else if (!r) st = 'Nothing to make yet: waiting for ingredients';
         else if (n >= outCap(o)) st = 'Output full: waiting for pickup';
         else if (o.prog > 0) st = `Paused at ${Math.floor(o.prog * 100)}%: waiting for an artisan`;
@@ -791,7 +798,8 @@ export class UI {
           const miss = Object.keys(r.in).filter((k) => (o.inp[k] || 0) < r.in[k]);
           st = miss.length ? `Waiting for ${miss.map((k) => ITEMS[k].name).join(', ')}` : 'Ready: waiting for an artisan';
         }
-        if (!o._busy && w.free() <= 0) st += '<small class="next">Your storage is full. Sell something or upgrade storage to keep goods moving.</small>';
+        if (o.off) {}
+        else if (!o._busy && w.free() <= 0) st += '<small class="next">Your storage is full. Sell something or upgrade storage to keep goods moving.</small>';
         else if (!o._busy && !s.workers.some((x) => x.role === 'artisan') && /artisan/.test(st)) st += '<small class="next">No artisan yet: others only help when they are free.</small>';
         const inp = pantryItems(s, o).map((k) => `<span class="pi-slot ${o.inp[k] ? '' : 'empty'}">${itemImg(k)}${o.inp[k] || 0}</span>`).join('') + ` <small>(${pantryUsed(o)}/${pantryCap(o)})</small>`;
         const out = n ? Object.entries(o.out).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
@@ -803,7 +811,7 @@ export class UI {
         <small>${fmtTime(craftTime(w, o, r))} · ${coin(sellPrice(w, r.out))}</small></div>`).join('');
       const locked = DEFS[o.type].recipes.filter((r) => !list.includes(r)).map((r) => `<div class="recipe locked">${itemImg(r.out)} ${ITEMS[r.out].name} <small>${img('lock')} Lv ${r.level}</small></div>`).join('');
       return { ...base, sub: d.desc,
-        body: `<div class="status" data-live="st">${v.st}</div><div class="bar" data-live="pb">${v.pb}</div>
+        body: `${power}<div class="status" data-live="st">${v.st}</div><div class="bar" data-live="pb">${v.pb}</div>
           <div class="row"><span>Make</span><select data-chg="recipe">${opts}</select></div>
           <div class="pantry"><div class="row"><span>${img('box')} Pantry</span>${(o.pl || 1) >= PANTRY.length ? '<span class="max">MAX</span>' : `<button class="btn small" data-act="upgradepantry" data-need="${E.pantryCost(o)}">${img('up')} Hold ${PANTRY[o.pl || 1]} ${coin(E.pantryCost(o))}</button>`}</div><div class="pslots" data-live="inp">${v.inp}</div></div>
           <div class="io"><span>Out: <b data-live="out">${v.out}</b></span></div>
@@ -813,11 +821,11 @@ export class UI {
     }
     if (d.animal) {
       const A = d.animal;
-      const info = () => ({ st: o.feed > 0 ? (o.out >= animalCap(o) ? `Full: waiting for a rancher` : `Happy and producing`) : `Hungry: needs ${ITEMS[A.feed].name.toLowerCase()} from storage`,
+      const info = () => ({ st: o.off ? 'Switched off: the animals rest and don’t eat' : o.feed > 0 ? (o.out >= animalCap(o) ? `Full: waiting for a rancher` : `Happy and producing`) : `Hungry: needs ${ITEMS[A.feed].name.toLowerCase()} from storage`,
         feed: `${itemImg(A.feed)} ${o.feed}/${feedCap(o)}`, out: `${itemImg(A.item)} ${o.out}/${animalCap(o)}` });
       const v = info();
       return { ...base, sub: `${animalCount(o)} ${A.kind}s · 1 ${ITEMS[A.item].name.toLowerCase()} each ${fmtTime(A.time / (animalCount(o) * w.fx.animal))}`,
-        body: `<div class="status" data-live="st">${v.st}</div><div class="io"><span>Feed: <b data-live="feed">${v.feed}</b></span><span>Ready: <b data-live="out">${v.out}</b></span></div>
+        body: `${power}<div class="status" data-live="st">${v.st}</div><div class="io"><span>Feed: <b data-live="feed">${v.feed}</b></span><span>Ready: <b data-live="out">${v.out}</b></span></div>
         <p class="hint">${esc(d.desc)} Upgrading adds an animal.</p>${usesHTML(A.item)}${this.workTip('animal')}`, live: info };
     }
     if (d.hive) {
@@ -825,7 +833,7 @@ export class UI {
       const info = () => ({ out: `${itemImg(it)} ${o.out}/${hiveCap(o)}` });
       const near = o.type === 'beehive' ? `${o._flowers || 0} flowers nearby · ` : '';
       return { ...base, sub: `${near}1 ${ITEMS[it].name.toLowerCase()} every ${fmtTime(d.hive.time / (hiveRate(o) * w.fx.animal))}`,
-        body: `<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>${usesHTML(it)}${this.workTip('hive')}`, live: info };
+        body: `${power}<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>${usesHTML(it)}${this.workTip('hive')}`, live: info };
     }
     if (d.store) {
       return { ...base, sub: `Holds ${storeCap(o)} items`, body: `<div class="io"><span>${img('box')} Farm storage: <b data-live="u">${fmt(w.used())}/${fmt(w.capacity)}</b></span></div><p class="hint">${esc(d.desc)}</p>${this.workTip('storage')}`,
@@ -883,7 +891,7 @@ export class UI {
   itemInfo(k) {
     const it = ITEMS[k], cr = CROPS[k], w = this.w, s = this.s;
     if (!it) return;
-    const facts = [`Sells for ${coin(sellPrice(w, k))}`, w.have(k) ? `You have ${fmt(w.have(k))}` : ''];
+    const facts = [`Sells for ${coin(sellPrice(w, k))}`, w.haveAll(k) ? `You have ${fmt(w.haveAll(k))}` : ''];
     if (cr) facts.push(`${img('clock')} ${fmtTime(cr.time)} to grow`, `${cr.yield} per harvest`, `Seeds ${cr.seed ? coin(cr.seed) : 'free'}`,
       cr.regrow ? 'Regrows after picking' : '', cr.season ? `${SEASONS.find((x) => x.id === cr.season).name} only` : '');
     const from = [...new Set((SOURCES[k] || []).map((t) => (t === 'plot' ? 'Field plots' : DEFS[t].name)))];

@@ -35,7 +35,9 @@ class Game {
       escape: () => this.ui.escape(),
     });
     this.frameFarm();
-    addEventListener('resize', () => { this.R.resize(); this.R.clampCam(); });
+    addEventListener('resize', () => this.fitScreen());
+    addEventListener('orientationchange', () => setTimeout(() => this.fitScreen(), 300));
+    if (window.ResizeObserver) { const ro = new ResizeObserver(() => this.fitScreen()); ro.observe(this.canvas); ro.observe(document.getElementById('hud')); }
     document.addEventListener('visibilitychange', () => this.onVisibility());
     addEventListener('pagehide', () => this.persist(true));
     Cloud.onStatus(() => { if (this.ui.sheet === 'menu') this.ui.liveSheet(); });
@@ -62,6 +64,15 @@ class Game {
     const fit = Math.min(this.canvas.clientWidth / (14 * TILE), (this.canvas.clientHeight - 140) / (9 * TILE));
     this.R.cam.z = Math.max(1, Math.round(Math.max(1.5, fit) * this.R.dpr)) / this.R.dpr;
     this.R.clampCam();
+  }
+  // Phones report their new size a moment after rotating, so re-check whenever the
+  // canvas or top bar actually changes size (otherwise the farm looks squashed).
+  fitScreen() {
+    const cv = this.canvas, dpr = Math.min(3, window.devicePixelRatio || 1);
+    if (Math.round(cv.clientWidth * dpr) !== cv.width || Math.round(cv.clientHeight * dpr) !== cv.height) { this.R.resize(); this.R.clampCam(); }
+    // the top bar wraps to two rows on narrow screens: keep the goal box below it
+    const h = document.getElementById('hud').offsetHeight;
+    if (h !== this.hudH) { this.hudH = h; document.documentElement.style.setProperty('--hud-h', h + 'px'); }
   }
   focus(x, y) { this.R.cam.x = x; this.R.cam.y = y; this.R.clampCam(); }
 

@@ -46,6 +46,7 @@ export function pantryItems(state, b) {
 }
 /** How many more of an item a workshop's pantry wants right now. */
 export function pantryWant(world, b, k, r = curRecipe(world, b)) {
+  if (b.off) return 0;
   const items = pantryItems(world.state, b);
   if (!items.includes(k)) return 0;
   const cap = pantryCap(b), have = b.inp[k] || 0;
@@ -84,12 +85,20 @@ function takeWaiting(world, o, k, n) {
 }
 const sourcesOf = (world, k) => world.bldgs.concat(world.animals, world.hives).filter((o) => !o._cc && waiting(world, o, k) > 0)
   .concat(world.state.piles.filter((p) => !p._c && p.item === k));
+// Pantry stock another building can spare: everything in a switched-off workshop,
+// and (when it's for a recipe being made) whatever a workshop isn't using right now.
+const usesNow = (b, k) => { const r = DEFS[b.type].recipes.find((x) => x.out === b.cur); return !!(r && r.in[k]); };
+const spareIn = (b, k, forCur) => (b._cp || !b.inp[k] ? 0 : b.off ? b.inp[k] : forCur && !usesNow(b, k) ? b.inp[k] : 0);
+const pantrySources = (world, k, target, forCur) => world.bldgs.filter((b) => b !== target && spareIn(b, k, forCur) > 0);
 /** Everything on the farm a workshop could use: storage plus goods waiting elsewhere. */
 // Counted once per tick: it's only a guide, the real take checks actual amounts.
 function waitingAll(world) {
-  if (world._waitT === world.time) return world._wait;
+  if (world._wait && world._waitT === world.time) return world._wait;
   const m = {};
-  for (const o of world.bldgs) if (!o._cc) for (const k in o.out) m[k] = (m[k] || 0) + o.out[k];
+  for (const o of world.bldgs) {
+    if (!o._cc) for (const k in o.out) m[k] = (m[k] || 0) + o.out[k];
+    if (o.off && !o._cp) for (const k in o.inp) m[k] = (m[k] || 0) + o.inp[k];
+  }
   for (const o of world.animals.concat(world.hives)) {
     if (o._cc || !o.out) continue;
     const d = DEFS[o.type], k = d.hive ? d.hive.item : d.animal.item;
@@ -172,6 +181,7 @@ export function step(world, dt, fast, now) {
   let feedNeed = 0, animalOut = 0;
   for (const a of world.animals) {
     const A = DEFS[a.type].animal, cap = animalCap(a);
+    if (a.off) { if (a.out > 0) animalOut++; continue; }
     if (a.feed > 0 && a.out < cap) {
       a.prog += (dt * animalCount(a) * fx.animal) / A.time;
       while (a.prog >= 1 && a.feed > 0 && a.out < cap) {
@@ -184,7 +194,7 @@ export function step(world, dt, fast, now) {
     if (a.out > 0) animalOut++;
   }
   for (const h of world.hives) {
-    if (h.out < hiveCap(h)) {
+    if (!h.off && h.out < hiveCap(h)) {
       const H = DEFS[h.type].hive;
       h.prog += (dt * fx.animal * hiveRate(h)) / H.time;
       if (h.prog >= 1) { h.prog -= 1; h.out++; s.stats.harvest[H.item] = (s.stats.harvest[H.item] || 0) + 1; }
@@ -505,36 +515,39 @@ const FIND = {
   supply(world, w) {
     const cand = [];
     for (const b of world.bldgs) {
-      if (b._cs || bad(world, b)) continue;
+      if (b.off || b._cs || bad(world, b)) continue;
       const r = curRecipe(world, b);
       let need = null, deficit = 0, best = 0;
       for (const k of pantryItems(world.state, b)) {
         const want = pantryWant(world, b, k, r);
         const score = want + (r && r.in[k] ? 1000 : 0); // the recipe being made comes first
-        if (want > 0 && score > best && onFarm(world, k, b) > 0) { best = score; deficit = want; need = k; }
+        if (want > 0 && score > best && (onFarm(world, k, b) > 0 || (r && r.in[k] && pantrySources(world, k, b, true).length))) { best = score; deficit = want; need = k; }
       }
-      if (need) cand.push({ b, item: need, deficit, x: b.x, y: b.y });
+      if (need) cand.push({ b, item: need, deficit, cur: !!(r && r.in[need]), x: b.x, y: b.y });
     }
     const c = nearest(cand, w, () => true);
     if (!c) return null;
     // nothing in storage: carry it straight from where it was made (works with a full barn)
+    // (or from another workshop's pantry that can spare it)
     if (!world.have(c.item)) {
-      const src = nearest(sourcesOf(world, c.item).filter((o) => o !== c.b), w, () => true);
+      const pan = pantrySources(world, c.item, c.b, c.cur);
+      const src = nearest(sourcesOf(world, c.item).filter((o) => o !== c.b).concat(pan), w, () => true);
       if (!src) return null;
       return directJob(world, w, src, c.b, c.item, c.deficit, `Bringing ${ITEMS[c.item].name} to the ${DEFS[c.b.type].name}`,
-        (q) => { c.b.inp[c.item] = (c.b.inp[c.item] || 0) + q; });
+        (q) => { c.b.inp[c.item] = (c.b.inp[c.item] || 0) + q; }, pan.includes(src));
     }
     return supplyJob(world, w, c.b, c.item, c.deficit, '_cs', `Bringing ${ITEMS[c.item].name} to the ${DEFS[c.b.type].name}`,
       (q) => { c.b.inp[c.item] = (c.b.inp[c.item] || 0) + q; });
   },
   feed(world, w) {
     if (!world.avail.feedNeed) return null;
-    const a = nearest(world.animals, w, (o) => !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && onFarm(world, DEFS[o.type].animal.feed) > 0);
+    const a = nearest(world.animals, w, (o) => !o.off && !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && onFarm(world, DEFS[o.type].animal.feed) > 0);
     if (!a) return null;
     const A = DEFS[a.type].animal;
     if (!world.have(A.feed)) {
-      const src = nearest(sourcesOf(world, A.feed), w, () => true);
-      return src ? directJob(world, w, src, a, A.feed, feedCap(a) - a.feed, `Feeding the ${A.kind}s`, (q) => { a.feed += q; }) : null;
+      const pan = pantrySources(world, A.feed, null, false);
+      const src = nearest(sourcesOf(world, A.feed).concat(pan), w, () => true);
+      return src ? directJob(world, w, src, a, A.feed, feedCap(a) - a.feed, `Feeding the ${A.kind}s`, (q) => { a.feed += q; }, pan.includes(src)) : null;
     }
     return supplyJob(world, w, a, A.feed, feedCap(a) - a.feed, '_cs', `Feeding the ${A.kind}s`, (q) => { a.feed += q; });
   },
@@ -562,7 +575,7 @@ const FIND = {
   },
   operate(world, w) {
     const b = nearest(world.bldgs, w, (o) => {
-      if (o._co || bad(world, o)) return false;
+      if (o.off || o._co || bad(world, o)) return false;
       if (outTotal(o) >= outCap(o)) return false;
       const r = curRecipe(world, o);
       return r && (o.prog > 0 || hasInputs(o, r));
@@ -662,14 +675,17 @@ function supplyJob(world, w, target, item, want, key, act, put) {
   return job;
 }
 
-function directJob(world, w, src, target, item, want, act, put) {
+function directJob(world, w, src, target, item, want, act, put, pantry) {
   const pile = !!src.item;
   const [sx, sy] = pile ? [src.x, src.y] : doorTile(src);
   const [tx, ty] = doorTile(target);
-  const job = new Job(w, 'supply', act).claim(target, '_cs').claim(src, pile ? '_c' : '_cc');
+  const job = new Job(w, 'supply', act).claim(target, '_cs').claim(src, pile ? '_c' : pantry ? '_cp' : '_cc');
   job.refs.add(target.id);
   job.go(sx, sy, src.id).do('load', wDur(world, w, 0.6), () => {
-    const got = takeWaiting(world, src, item, Math.min(world.fx.carry, Math.max(1, want)));
+    const n = Math.min(world.fx.carry, Math.max(1, want));
+    let got;
+    if (pantry) { got = Math.min(n, src.inp[item] || 0); src.inp[item] -= got; if (!src.inp[item]) delete src.inp[item]; }
+    else got = takeWaiting(world, src, item, n);
     if (!got) { job.steps.length = job.i; return; }
     setCarry(w, item, got);
   }, 'basket');
@@ -805,7 +821,7 @@ function doGo(world, w, s, dt, fast) {
 function doCraft(world, w, s, dt) {
   const b = s.b;
   const r = world.byId.has(b.id) ? curRecipe(world, b) : null;
-  const stop = !r || s.done >= s.max || (b.prog <= 0 && (!hasInputs(b, r) || outTotal(b) >= outCap(b)));
+  const stop = !r || s.done >= s.max || (b.prog <= 0 && (b.off || !hasInputs(b, r) || outTotal(b) >= outCap(b)));
   if (stop) { w._hidden = false; b._busy = false; w.job.i++; return dt; }
   if (b.prog <= 0) {
     for (const k in r.in) { b.inp[k] -= r.in[k]; if (!b.inp[k]) delete b.inp[k]; }
