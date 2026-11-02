@@ -49,7 +49,7 @@ export class Renderer {
     this.resize();
   }
 
-  setWorld(world) { this.world = world; this.terrainKey = ''; this.critters.clear(); this.makeBorder(); }
+  setWorld(world) { this.world = world; this.terrainKey = ''; this.critters.clear(); this.petState?.clear(); this.makeBorder(); }
 
   resize() {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -659,20 +659,41 @@ export class Renderer {
   }
 
   drawWeather(dt) {
-    if (this.sid === 'winter') { this.drawSnow(dt, this.world.raining ? 160 : 45); return; }
+    const wx = this.world.weather, ctx = this.ctx, W = this.cv.width, H = this.cv.height, d = this.dpr;
+    const storm = wx === 'storm';
+    if (wx === 'heat') { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = `rgba(255,170,70,${0.08 + Math.sin(this.t * 0.8) * 0.02})`; ctx.fillRect(0, 0, W, H); }
+    if (wx === 'rainbow') this.drawRainbow();
+    if (storm) {
+      // dark skies and the odd flash of lightning
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = 'rgba(30,36,60,0.22)'; ctx.fillRect(0, 0, W, H);
+      if (this.flash > 0) { this.flash -= dt; ctx.fillStyle = `rgba(240,245,255,${Math.max(0, this.flash) * 1.4})`; ctx.fillRect(0, 0, W, H); }
+      else if (Math.random() < dt * 0.12 && this.world.state.settings.motion !== false) this.flash = 0.35;
+    }
+    if (this.sid === 'winter') { this.drawSnow(dt, storm ? 320 : this.world.raining ? 160 : 45); return; }
     if (!this.world.raining) { this.rain = null; return; }
-    const ctx = this.ctx, W = this.cv.width, H = this.cv.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = 'rgba(60,80,120,0.16)';
     ctx.fillRect(0, 0, W, H);
-    if (!this.rain) this.rain = Array.from({ length: 110 }, () => ({ x: Math.random() * W, y: Math.random() * H, s: 0.7 + Math.random() * 0.6 }));
+    const n = storm ? 220 : 110;
+    if (!this.rain || this.rain.length !== n) this.rain = Array.from({ length: n }, () => ({ x: Math.random() * W, y: Math.random() * H, s: 0.7 + Math.random() * 0.6 }));
     ctx.fillStyle = 'rgba(200,225,255,0.55)';
-    const d = this.dpr;
     for (const r of this.rain) {
-      r.y += 420 * d * r.s * dt; r.x -= 60 * d * dt;
+      r.y += 420 * d * r.s * dt * (storm ? 1.4 : 1); r.x -= (storm ? 180 : 60) * d * dt;
       if (r.y > H) { r.y = -10; r.x = Math.random() * W * 1.1; }
       ctx.fillRect(Math.round(r.x), Math.round(r.y), Math.max(1, Math.round(d)), Math.round(7 * d));
     }
+  }
+
+  drawRainbow() {
+    const ctx = this.ctx, W = this.cv.width, H = this.cv.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const cx = W * 0.75, cy = H * 0.55, r0 = Math.max(W, H) * 0.55;
+    ['#ff5a5a', '#ffa040', '#ffe060', '#70d870', '#60a8ff', '#a070e0'].forEach((c, i) => {
+      ctx.strokeStyle = c; ctx.globalAlpha = 0.16; ctx.lineWidth = r0 * 0.035;
+      ctx.beginPath(); ctx.arc(cx, cy, r0 - i * r0 * 0.035, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
   }
 
   drawSnow(dt, n) {

@@ -157,6 +157,20 @@ const DRAW = {
     P.oval(0, 16, 16, 13, C.stoneD); P.oval(1, 16, 14, 10, C.stone); P.oval(3, 18, 10, 5, C.waterDD); P.px(6, 19, C.waterL);
     for (const [x, y] of [[1, 23], [5, 26], [10, 26], [13, 23]]) P.r(x, y, 3, 2, C.stoneL);
   }),
+  greenhouse: () => make('greenhouse', 14, (P, W, H) => {
+    // glass house: a white frame, pale glass panes and green plants inside
+    P.r(1, 14, W - 2, H - 15, '#dff2ee');
+    P.r(2, 15, W - 4, H - 18, '#b8e4dc');
+    for (let x = 4; x < W - 4; x += 5) { P.oval(x, H - 10, 5, 5, C.leaf); P.px(x + 2, H - 10, C.leafL); P.px(x + 1, H - 8, C.pink); }
+    for (let x = 1; x < W; x += 8) P.vl(x, 8, H - 9, C.white);
+    P.hl(1, H - 3, W - 2, C.white); P.hl(1, 14, W - 2, C.white);
+    // pitched glass roof
+    for (let i = 0; i < 9; i++) P.hl(1 + i * 2, 13 - i, W - 2 - i * 4, i % 3 ? '#c8ecf4' : '#e8fbff');
+    P.hl(1, 13, W - 2, C.white);
+    P.line(1, 13, W / 2, 4, C.white); P.line(W - 2, 13, W / 2, 4, C.white);
+    P.r(W / 2 - 3, H - 10, 6, 9, '#a8d8d0'); P.vl(W / 2, H - 10, 9, C.white);
+    P.hl(0, H - 1, W, C.stoneD);
+  }),
   sprinkler: () => make('sprinkler', 4, (P) => {
     P.oval(3, 13, 10, 6, C.stoneD); P.oval(4, 13, 8, 4, C.stone);
     P.r(7, 4, 2, 11, '#8a98a2'); P.vl(7, 4, 11, '#c8d4dc'); P.r(5, 3, 6, 2, '#6a7882'); P.px(4, 3, C.waterL); P.px(11, 3, C.waterL);

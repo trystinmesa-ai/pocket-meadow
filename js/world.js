@@ -1,7 +1,8 @@
 // Game state: creating a new farm, indexes for fast lookups, inventory,
 // placement rules and the derived effects of upgrades.
 import { BUNDLE_ROOMS, MAP, DEFS, ITEMS, CROPS, START_PARCELS, SAVE_VERSION, UPGRADES, CHARM_BONUS_PER, CHARM_BONUS_MAX,
-  BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES, QUARRY, shedCap, VILLAGERS, PROJECTS, PERKS, HEARTS, ORDER_SLOTS, GOLD_BASE } from './data.js';
+  BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES, QUARRY, shedCap, VILLAGERS, PROJECTS, PERKS, HEARTS, ORDER_SLOTS, GOLD_BASE,
+  MUSEUM_WINGS, MUSEUM_REWARD } from './data.js';
 
 export const PW = MAP.w / MAP.parcel;
 export const PH = MAP.h / MAP.parcel;
@@ -64,7 +65,7 @@ export function newGame(now = Date.now()) {
     upgrades: {}, orders: [], nextOrderAt: now + 90 * 1000,
     goal: 0, ach: {}, hats: {}, pets: [], ribbons: 0, fest: null, bundles: { give: {}, done: {} },
     mats: { wood: 6, stone: 4 }, shed: 1, quarry: null,
-    friends: {}, village: { give: {}, done: {} }, gold: {}, perks: {},
+    friends: {}, village: { give: {}, done: {} }, gold: {}, perks: {}, finds: {}, museum: {},
     stats: { earned: 0, soldCoins: 0, harvest: {}, craft: {}, sold: {}, orders: 0, play: 0 },
     settings: { grid: false, helpers: true, motion: true },
     nextId: 1,
@@ -92,7 +93,7 @@ export function initObject(o) {
   if (o.type === 'plot') { o.crop ||= null; o.st ||= 'empty'; o.p ||= 0; o.wet ||= false; }
   if (d.cat === 'tree') { o.p ??= 0.3; }
   if (d.recipes) { o.lvl ||= 1; o.pl ||= 1; o.recipe ||= 'auto'; o.cur ||= null; o.inp ||= {}; o.out ||= {}; o.prog ||= 0; }
-  if (d.animal) { o.lvl ||= 1; o.feed ||= 0; o.prog ||= 0; o.out ||= 0; }
+  if (d.animal) { o.lvl ||= 1; o.feed ||= 0; o.prog ||= 0; o.out ||= 0; o.joy ??= 30; }
   if (d.hive) { o.lvl ||= 1; o.prog ||= 0; o.out ||= 0; }
   if (d.store) { o.lvl ||= 1; }
   return o;
@@ -114,7 +115,7 @@ export function migrate(s) {
   }
   s.shed ||= 1; s.quarry ??= null;
   s.friends ||= {}; s.village ||= { give: {}, done: {} }; s.village.give ||= {}; s.village.done ||= {};
-  s.gold ||= {}; s.perks ||= {};
+  s.gold ||= {}; s.perks ||= {}; s.finds ||= {}; s.museum ||= {};
   s.objects = s.objects.filter((o) => DEFS[o.type]);
   s.objects.forEach(initObject);
   for (const w of s.workers) { w.lvl ||= 1; w.xp ||= 0; if (w.carry && !ITEMS[w.carry.item]) w.carry = null; }
@@ -139,7 +140,7 @@ export class World {
     this.occ.fill(0);
     this.byId = new Map();
     this.plots = []; this.trees = []; this.bldgs = []; this.storages = []; this.wells = []; this.sprinklers = [];
-    this.animals = []; this.hives = []; this.lights = []; this.sites = []; this.debris = [];
+    this.animals = []; this.hives = []; this.lights = []; this.sites = []; this.debris = []; this.greenhouses = [];
     this.doors = new Set();
     this.housing = 0; this.capacity = 0; this.charm = 0;
     const flowers = [];
@@ -157,6 +158,7 @@ export class World {
       if (d.store) { this.storages.push(o); this.capacity += storeCap(o); }
       if (o.type === 'well') this.wells.push(o);
       if (DEFS[o.type].radius) this.sprinklers.push(o);
+      if (d.gh) this.greenhouses.push(o);
       if (d.animal) this.animals.push(o);
       if (d.hive) this.hives.push(o);
       if (d.houses) this.housing += d.houses;
@@ -177,6 +179,12 @@ export class World {
     for (const sp of this.sprinklers) {
       const r = DEFS[sp.type].radius;
       for (let y = sp.y - r; y <= sp.y + r; y++) for (let x = sp.x - r; x <= sp.x + r; x++) if (inMap(x, y)) this.sprinkled.add(idx(x, y));
+    }
+    // greenhouse cover: every tile within reach of a finished greenhouse
+    this.sheltered = new Set();
+    for (const g of this.greenhouses) {
+      const d = DEFS[g.type], r = d.gh;
+      for (let y = g.y - r; y < g.y + d.h + r; y++) for (let x = g.x - r; x < g.x + d.w + r; x++) if (inMap(x, y)) this.sheltered.add(idx(x, y));
     }
     this.fx = effects(s, this);
     this.version = (this.version || 0) + 1;
@@ -304,7 +312,19 @@ export function farmPerks(s) {
   for (const v of VILLAGERS) if ((s.friends?.[v.id] || 0) >= HEARTS[HEARTS.length - 1]) add(v.perk);
   for (const pr of PROJECTS) if (s.village?.done[pr.id]) add(pr.reward);
   for (const id in s.perks || {}) if (PERKS[id]) add(PERKS[id].fx);
+  const wings = museumWings(s);
+  for (const wg of wings) if (wg.done) add(wg.perk);
+  if (wings.every((x) => x.done)) p.charm += MUSEUM_REWARD.charm;
   return p;
+}
+
+/** Each museum wing with the items it wants and how many are on display. */
+export function museumWings(s) {
+  return MUSEUM_WINGS.map((wg) => {
+    const items = Object.keys(ITEMS).filter(wg.test);
+    const n = items.filter((k) => s.museum?.[k]).length;
+    return { ...wg, items, n, done: n === items.length };
+  });
 }
 
 export function effects(s, w) {

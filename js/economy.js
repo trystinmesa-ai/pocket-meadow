@@ -7,7 +7,8 @@ import { seasonAt, festivalOn } from './seasons.js';
 import { PETS, MAX_PETS, petCost, PET_NAMES, SEASONS, BUNDLE_ROOMS, BUNDLES, ALL_BUNDLES_REWARD, matsFor, upgMatsFor, buildTime, needsBuilding,
   QZONES, SHED_MAX, shedCost, QUARRY } from './data.js';
 import { newQuarry, addZone } from './quarry.js';
-import { VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT } from './data.js';
+import { VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT, PAT_EVERY, MUSEUM_REWARD } from './data.js';
+import { museumWings } from './world.js';
 import { merchantHere, stockOf, soldOut } from './merchant.js';
 
 /** Add earned coins (offline earnings wait in pendingCoins to be collected). */
@@ -415,6 +416,51 @@ export function giveProject(world, id, coins = false) {
   }
   return '';
 }
+
+// ---------- animal friendship ----------
+export const patReady = (o, now = Date.now()) => !o.patT || now - o.patT >= PAT_EVERY * 1000;
+export function patAnimals(world, o, now = Date.now()) {
+  if (!DEFS[o.type].animal) return 'Only animals like a pat';
+  if (!patReady(o, now)) return 'They were just patted. Try again in a little while';
+  o.joy = Math.min(100, (o.joy ?? 30) + 12);
+  o.patT = now;
+  return '';
+}
+
+// ---------- museum ----------
+/** How many of an item you have that could go to the museum (barn, workshops, shed or finds shelf). */
+export function museumHave(world, k) {
+  if (ITEMS[k].mat) return world.mat(k);
+  if (ITEMS[k].find) return world.state.finds[k] || 0;
+  return world.haveAll(k);
+}
+export function donate(world, k) {
+  const s = world.state;
+  if (s.museum[k]) return 'Already on display';
+  if (museumHave(world, k) < 1) return `You need a ${ITEMS[k].name} first`;
+  const before = new Set(museumWings(s).filter((x) => x.done).map((x) => x.id));
+  if (ITEMS[k].mat) world.takeMats({ [k]: 1 });
+  else if (ITEMS[k].find) { s.finds[k]--; if (!s.finds[k]) delete s.finds[k]; }
+  else world.takeAll(k, 1);
+  s.museum[k] = true;
+  const wings = museumWings(s), fresh = wings.filter((x) => x.done && !before.has(x.id));
+  if (fresh.length) {
+    world.rebuild();
+    for (const wg of fresh) world.events.push({ t: 'wing', id: wg.id });
+    if (wings.every((x) => x.done)) { earn(world, MUSEUM_REWARD.coins, 0); world.events.push({ t: 'museum' }); }
+  }
+  return '';
+}
+/** Donate one of everything you have that the museum still needs. */
+export function donateAll(world) {
+  let n = 0;
+  for (const k of Object.keys(ITEMS)) if (!world.state.museum[k] && museumHave(world, k) > 0 && donate(world, k) === '') n++;
+  return n;
+}
+
+// ---------- friends' gift baskets ----------
+/** What a gift basket holds, worked out by the farm that opens it (so gifts can't be faked). */
+export const giftReward = (level) => ({ coins: Math.round(60 * Math.pow(level + 2, 1.5)), ribbons: 1 });
 
 // ---------- gold-star produce ----------
 export const goldPrice = (world, crop) => sellPrice(world, crop) * GOLD_MULT;

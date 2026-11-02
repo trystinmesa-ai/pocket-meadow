@@ -173,4 +173,60 @@ function fail(e) {
   else setStatus({ state: 'error', error: e.message });
 }
 
+// ---------- friends: shared farms and gift baskets ----------
+// Tables come from supabase/friends.sql. If they haven't been set up yet the
+// calls fail with NotSetUp, and the game just says friends aren't on yet.
+const FRIENDS = 'meadow_friends', GIFTS = 'meadow_gifts';
+export class NotSetUp extends Error { constructor() { super('Friends aren’t switched on for this game yet.'); } }
+const friendCall = async (path, opts) => {
+  try { return await rest(path, opts); } catch (e) {
+    if (e.status === 404 || e.code === '42P01' || e.code === 'PGRST205') throw new NotSetUp();
+    throw e;
+  }
+};
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I mix-ups
+const newCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+export const cleanCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+
+/** Your shared farm's row ({ code, name }), or null if you don't share. */
+export async function myShare() {
+  if (!user()) return null;
+  const rows = await friendCall(`${FRIENDS}?select=code,name&user_id=eq.${user().id}`);
+  return rows && rows[0] ? rows[0] : null;
+}
+/** Start sharing (or rename). Returns { code, name }. */
+export async function share(name, farm) {
+  const mine = await myShare();
+  if (mine) {
+    const rows = await friendCall(`${FRIENDS}?user_id=eq.${user().id}`, { method: 'PATCH', prefer: 'return=representation', body: { name, farm } });
+    return rows[0];
+  }
+  for (let i = 0; i < 5; i++) {
+    try {
+      const rows = await friendCall(FRIENDS, { method: 'POST', prefer: 'return=representation', body: { code: newCode(), user_id: user().id, name, farm } });
+      return rows[0];
+    } catch (e) { if (!(e.status === 409 || e.code === '23505')) throw e; } // code taken: try another
+  }
+  throw new Error('Couldn’t make a farm code. Try again.');
+}
+export const unshare = () => friendCall(`${FRIENDS}?user_id=eq.${user().id}`, { method: 'DELETE' });
+export const uploadFarm = (farm) => friendCall(`${FRIENDS}?user_id=eq.${user().id}`, { method: 'PATCH', body: { farm } });
+/** A friend's shared farm by code: { code, name, farm, updated_at } or null. */
+export async function fetchFarm(code, withFarm = true) {
+  const rows = await friendCall(`${FRIENDS}?select=code,name,updated_at${withFarm ? ',farm' : ''}&code=eq.${cleanCode(code)}`);
+  return rows && rows[0] ? rows[0] : null;
+}
+/** Send today's gift basket. Returns false if one already went today. */
+export async function sendGift(code, fromName, day) {
+  try {
+    await friendCall(GIFTS, { method: 'POST', body: { from_user: user().id, from_name: fromName, to_code: cleanCode(code), day } });
+    return true;
+  } catch (e) { if (e.status === 409 || e.code === '23505') return false; throw e; }
+}
+export const giftsSentToday = async (day) => (await friendCall(`${GIFTS}?select=to_code&from_user=eq.${user().id}&day=eq.${day}`)).map((r) => r.to_code);
+/** Open every unopened gift sent to your code. Only rows this call actually flipped are returned, so two devices can't both open one. */
+export async function openGifts(code) {
+  return (await friendCall(`${GIFTS}?to_code=eq.${cleanCode(code)}&claimed=is.false`, { method: 'PATCH', prefer: 'return=representation', body: { claimed: true } })) || [];
+}
+
 if (user()) setStatus({ state: 'ok' });

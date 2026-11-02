@@ -6,12 +6,14 @@ import { step } from './sim.js';
 import { Renderer } from './render.js';
 import { attachInput } from './input.js';
 import { UI } from './ui.js';
-import { saveLocal, loadLocal, catchUp, serialize, wipeLocal, backupLocal, setOwner } from './save.js';
+import { saveLocal, loadLocal, catchUp, serialize, wipeLocal, backupLocal, setOwner, farmSnapshot } from './save.js';
 import * as Cloud from './cloud.js';
+import { giftReward } from './economy.js';
 
 const LOCAL_SAVE_EVERY = 10;   // seconds
 const CLOUD_SAVE_EVERY = 60;   // seconds
 const SHOW_SUMMARY_AFTER = 3 * 60 * 1000;
+const FRIENDS_EVERY = 10 * 60; // seconds between sharing a fresh farm snapshot and checking for gifts
 
 class Game {
   constructor() {
@@ -55,9 +57,9 @@ class Game {
     requestAnimationFrame((t) => this.loop(t));
   }
 
-  frameFarm() {
+  frameFarm(world = this.world) {
     // centre on the farmhouse and fit the owned area
-    const s = this.world.state;
+    const s = world.state;
     const house = s.objects.find((o) => o.type === 'farmhouse');
     this.R.cam.x = house ? (house.x + 7) * TILE : MAP.w * TILE / 2;
     this.R.cam.y = house ? (house.y + 4) * TILE : MAP.h * TILE / 2;
@@ -84,7 +86,12 @@ class Game {
       else {
         const dt = Math.min(0.1, real);
         let left = dt;
-        while (left > 1e-6) { const d = Math.min(0.05, left); step(this.world, d, false, Date.now()); left -= d; }
+        while (left > 1e-6) {
+          const d = Math.min(0.05, left);
+          step(this.world, d, false, Date.now());
+          if (this.visitWorld) { step(this.visitWorld, d, false, Date.now()); this.visitWorld.events.length = 0; }
+          left -= d;
+        }
         this.world.state.stats.play += dt;
         for (const e of this.world.events) this.ui.handle(e);
         this.world.events.length = 0;
@@ -92,6 +99,8 @@ class Game {
         if (this.uiT > 0.25) { this.uiT = 0; this.ui.tick(); }
         if (this.saveT > LOCAL_SAVE_EVERY) { this.saveT = 0; saveLocal(this.world.state); }
         if (this.cloudT > CLOUD_SAVE_EVERY) { this.cloudT = 0; this.syncNow(); }
+        this.friendT = (this.friendT ?? FRIENDS_EVERY - 20) + dt;
+        if (this.friendT > FRIENDS_EVERY) { this.friendT = 0; this.friendsTick(); }
       }
     }
     this.input.tick();
@@ -242,6 +251,52 @@ class Game {
     setOwner(null);
     await this.showFarm(loadLocal() || newGame(), false);
     this.ui.toast('Signed out. Your farm is safe in your account.');
+  }
+
+  // ---------- friends ----------
+  /** Share a fresh snapshot of the farm (if sharing) and open any gifts. */
+  async friendsTick() {
+    const s = this.world.state;
+    if (!Cloud.user() || !s.share) return;
+    try {
+      await Cloud.uploadFarm(farmSnapshot(s));
+      const gifts = await Cloud.openGifts(s.share.code);
+      for (const g of gifts) {
+        const r = giftReward(this.world.state.level);
+        this.world.state.coins += r.coins; this.world.state.ribbons += r.ribbons;
+        this.ui.toast(`${g.from_name} sent you a gift basket: +${r.coins.toLocaleString()} coins and a ribbon!`, 'good');
+      }
+      if (gifts.length) { this.dirty(); saveLocal(this.world.state); }
+    } catch { /* offline or not set up: try again later */ }
+  }
+
+  /** Look around a friend's shared farm (it runs here, but nothing is saved). */
+  async visit(code) {
+    const row = await Cloud.fetchFarm(code);
+    if (!row || !row.farm) throw new Error('That farm isn’t being shared right now.');
+    const state = migrate(JSON.parse(JSON.stringify(row.farm)));
+    state.simTime = Date.now();
+    state.settings = { ...state.settings, helpers: true };
+    const vw = new World(state);
+    vw.visiting = true;
+    if (!this.visitWorld) this.homeCam = { ...this.R.cam };
+    this.ui.goFarm();
+    this.ui.select(null, true);
+    if (this.ui.mode) this.ui.setMode(null);
+    this.visitWorld = vw;
+    this.visitInfo = { code: row.code, name: row.name, level: state.level, updated: row.updated_at };
+    this.R.setWorld(vw);
+    this.frameFarm(vw);
+    document.body.classList.add('visiting');
+    this.ui.renderScenebar();
+  }
+  leaveVisit() {
+    if (!this.visitWorld) return;
+    this.visitWorld = null; this.visitInfo = null;
+    this.R.setWorld(this.world);
+    if (this.homeCam) { this.R.cam = this.homeCam; this.R.clampCam(); }
+    document.body.classList.remove('visiting');
+    this.ui.renderScenebar();
   }
 
   /** Replace the current farm with one from a backup file. */

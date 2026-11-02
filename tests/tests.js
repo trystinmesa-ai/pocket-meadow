@@ -296,6 +296,8 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   for (const d of Object.values(D)) { if (d.fruit) sources.add(d.fruit); if (d.animal) sources.add(d.animal.item); if (d.hive) sources.add(d.hive.item); for (const r of d.recipes || []) sources.add(r.out); for (const k in d.gives || {}) sources.add(k); }
   const { QNODES } = await import('../js/data.js');
   for (const n of Object.values(QNODES)) { sources.add(n.item); if (n.gem) sources.add('gem'); }
+  const DD = await import('../js/data.js');
+  for (const f of DD.FISH) sources.add(f.id); for (const k of Object.values(DD.ANIMAL_TREASURE)) sources.add(k); for (const k of DD.FINDS.flat()) sources.add(k);
   const orphans = Object.keys(IT).filter((k) => !sources.has(k));
   ok(!orphans.length, 'Every item can actually be obtained', orphans.join(', '));
 }
@@ -433,7 +435,7 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
 {
   const D = await import('../js/data.js');
   ok(D.USES.wheat.some((u) => u.out === 'flour') && D.USES.wheat.some((u) => u.feeds === 'chicken') && D.USES.wheat.some((u) => u.out === 'beer'), 'Wheat lists flour, ale and chicken feed');
-  const missing = Object.keys(ITEMS).filter((k) => !ITEMS[k].mat && !(D.SOURCES[k] || []).length);
+  const missing = Object.keys(ITEMS).filter((k) => !ITEMS[k].mat && !ITEMS[k].find && !(D.SOURCES[k] || []).length);
   ok(!missing.length, 'Every item says where it comes from', missing.join(','));
 }
 
@@ -596,7 +598,7 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   run(w3, 120, true);
   ok(!w3.debris.length && Object.values(w3.state.mats).some((v) => v > 0), 'Farmhands clear it for materials', JSON.stringify(w3.state.mats));
   for (let i = 0; i < 40; i++) { w3.state.debrisT = D.DEBRIS_EVERY; for (const x of w3.state.workers) x.role = 'artisan'; run(w3, 1, true); }
-  ok(w3.debris.length <= D.debrisMax(w3.state.map.owned.filter(Boolean).length), 'Only a few pieces at a time', `${w3.debris.length}`);
+  ok(w3.debris.length <= D.debrisMax(w3.state.map.owned.filter(Boolean).length) + 3, 'Only a few pieces at a time (a few more in storms)', `${w3.debris.length}`);
   // clearing by hand
   const one = w3.debris[0], m0 = { ...w3.state.mats };
   if (one) { E.remove(w3, one); ok(Object.keys(D.DEFS[one.type].gives).every((k) => (w3.state.mats[k] || 0) > (m0[k] || 0)), 'Clearing it yourself gives the materials too'); }
@@ -715,6 +717,136 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   // save round trip keeps the new progress
   const back = migrate(JSON.parse(serialize(w.state)));
   ok(back.friends[v.id] === s.friends[v.id] && back.village.done.bridge && back.perks && back.gold, 'Friendship, projects and perks are saved');
+}
+
+// 29. weather events, greenhouse, animal friendship, fish, finds and the museum
+{
+  const D = await import('../js/data.js');
+  const S = await import('../js/sim.js');
+  const W = await import('../js/world.js');
+  // weather
+  const w = fresh(), s = w.state;
+  const seen = new Set();
+  for (let t = T0; t < T0 + 200 * 86400e3; t += D.RAIN_BLOCK * 1000) seen.add(S.weatherAt(w, t));
+  ok(['clear', 'rain', 'storm', 'heat', 'rainbow'].every((k) => seen.has(k)), 'Every kind of weather turns up', [...seen].join(' '));
+  const ws = empty(); ws.state.debrisT = 0;
+  let stormT = T0; while (S.weatherAt(ws, stormT) !== 'storm') stormT += D.RAIN_BLOCK * 1000;
+  ws._t = stormT;
+  run(ws, D.DEBRIS_EVERY / 4 + 2, true);
+  ok(ws.debris.length >= 1 && ws.weather === 'storm', 'Storms blow branches and rocks onto the land', `${ws.debris.length}`);
+  const wh = empty(), sh = wh.state; rich(wh, 12);
+  let heatT = T0; while (S.weatherAt(wh, heatT) !== 'heat') heatT += D.RAIN_BLOCK * 1000;
+  sh.objects.push(initObject({ id: sh.nextId++, type: 'plot', x: 19, y: 21, crop: 'wheat', st: 'grow', p: 0 }), initObject({ id: sh.nextId++, type: 'plot', x: 21, y: 21, crop: 'wheat', st: 'grow', p: 0, wet: true }));
+  wh.rebuild(); wh._t = heatT; run(wh, 10, true);
+  const [dryP, wetP] = wh.plots;
+  ok(wh.weather === 'heat' && dryP.p / wetP.p < 0.6, 'Heat waves slow crops that aren’t watered', `${dryP.p.toFixed(4)} vs ${wetP.p.toFixed(4)}`);
+  // greenhouse: a seasonal crop out of season
+  const wg = empty(), sg = wg.state; rich(wg, 20); wg._t = T0;
+  const { seasonAt } = await import('../js/seasons.js');
+  const nowSeason = seasonAt(T0).id;
+  const offSeason = Object.keys(CROPS).find((c) => CROPS[c].season && CROPS[c].season !== nowSeason);
+  sg.objects.push(initObject({ id: sg.nextId++, type: 'plot', x: 19, y: 21, crop: offSeason }));
+  newWorker(sg, 'farmer', 'Pip'); sg.workers[0].x = 19.5; sg.workers[0].y = 22.5; wg.rebuild();
+  run(wg, 20, true);
+  ok(wg.plots[0].st === 'empty', 'Out of season, a seasonal crop waits', offSeason);
+  ok(E.place(wg, 'greenhouse', 20, 20) === '' && wg.sheltered.has(21 * D.MAP.w + 19), 'A greenhouse shelters the plots around it');
+  run(wg, 20, true);
+  ok(wg.plots[0].st !== 'empty', 'Under the greenhouse it gets planted anyway', wg.plots[0].st);
+  // animals grow happier and produce faster
+  const wa = fresh(); rich(wa, 12);
+  let coop; for (let y = 10; y < 34 && !coop; y++) for (let x = 8; x < 40 && !coop; x++) if (E.place(wa, 'coop', x, y) === '') coop = wa.objAt(x, y);
+  coop.joy = 30; coop.feed = 100;
+  run(wa, 600, true);
+  ok(coop.joy > 30, 'Fed animals grow happier over time', `${coop.joy.toFixed(1)}`);
+  const j0 = coop.joy;
+  ok(E.patAnimals(wa, coop) === '' && coop.joy > j0 && /just patted/.test(E.patAnimals(wa, coop)), 'A pat makes them happier, but only every so often');
+  coop.feed = 0; wa.state.workers = []; const j1 = coop.joy; run(wa, 300, true);
+  ok(coop.joy < j1, 'Hungry animals lose heart', `${j1.toFixed(1)} -> ${coop.joy.toFixed(1)}`);
+  // fish
+  const wf = fresh(); wf.season = D.SEASONS.find((x) => x.id === 'winter'); wf.weather = 'clear';
+  const got = new Set(); for (let i = 0; i < 400; i++) got.add(S.pickFish(wf, Date.UTC(2026, 0, 12, 12)));
+  ok(got.has('pike') && !got.has('trout') && !got.has('eel'), 'Which fish bite depends on season and weather', [...got].join(' '));
+  wf.weather = 'storm'; const got2 = new Set(); for (let i = 0; i < 2000; i++) got2.add(S.pickFish(wf, Date.UTC(2026, 0, 12, 12)));
+  ok(got2.has('eel'), 'Eels come out in the rain');
+  // quarry finds
+  const wq = fresh(); rich(wq, 16); E.buyParcel(wq, 1, 2); E.buyParcel(wq, 0, 2); E.discoverQuarry(wq); E.hire(wq, 'miner'); E.hire(wq, 'miner'); wq.state.shed = 8; wq.state.mats = {};
+  await catchUp(wq, 8 * 3600 * 1000);
+  ok(Object.keys(wq.state.finds).length > 0, 'Miners dig up fossils and relics', JSON.stringify(wq.state.finds));
+  // museum
+  const wings = W.museumWings(s);
+  const all = Object.keys(ITEMS), inWings = wings.flatMap((x) => x.items);
+  ok(all.every((k) => inWings.filter((y) => y === k).length === 1), 'Every item belongs to exactly one museum wing', all.filter((k) => inWings.filter((y) => y === k).length !== 1).join(','));
+  const wm = fresh(); rich(wm, 12); wm.addItem('wheat', 2);
+  ok(E.donate(wm, 'wheat') === '' && wm.state.museum.wheat && wm.have('wheat') === 1, 'Donating puts one on display');
+  ok(/Already/.test(E.donate(wm, 'wheat')) && /need/.test(E.donate(wm, 'cake')), 'Only one of each, and only what you have');
+  const river = W.museumWings(wm.state).find((x) => x.id === 'river');
+  for (const k of river.items) wm.state.museum[k] = true;
+  wm.state.museum[river.items[0]] = false; delete wm.state.museum[river.items[0]];
+  const k0 = river.items[0], s0 = wm.fx.sell;
+  if (ITEMS[k0].mat) wm.state.mats[k0] = 1; else if (ITEMS[k0].find) wm.state.finds[k0] = 1; else wm.addItem(k0, 1);
+  ok(E.donate(wm, k0) === '' && wm.fx.sell > s0, 'Finishing a wing gives its lasting bonus', `${s0.toFixed(3)} -> ${wm.fx.sell.toFixed(3)}`);
+  const back = migrate(JSON.parse(serialize(wm.state)));
+  ok(back.museum.wheat && back.finds, 'The museum is saved');
+}
+
+// 30. friends: sharing, visiting and gift baskets (against a fake Supabase)
+{
+  const { farmSnapshot } = await import('../js/save.js');
+  const db = { friends: [], gifts: [], me: 'u1', setUp: true };
+  const eq = (u, k) => { const v = u.searchParams.get(k); return v && v.startsWith('eq.') ? v.slice(3) : null; };
+  const fake = async (url, opts) => {
+    const u = new URL(url), body = opts.body ? JSON.parse(opts.body) : null;
+    const reply = (j, status = 200) => ({ ok: status < 300, status, text: async () => JSON.stringify(j) });
+    if (u.pathname.endsWith('/token')) return reply({ access_token: 'a', refresh_token: 'r', expires_in: 3600, user: { id: db.me, email: 't@x' } });
+    if (!db.setUp && /meadow_(friends|gifts)$/.test(u.pathname)) return reply({ code: 'PGRST205', message: 'not found' }, 404);
+    if (u.pathname.endsWith('/meadow_friends')) {
+      const code = eq(u, 'code'), uid = eq(u, 'user_id');
+      const match = db.friends.filter((r) => (!code || r.code === code) && (!uid || r.user_id === uid));
+      if (opts.method === 'POST') { if (db.friends.some((r) => r.code === body.code || r.user_id === body.user_id)) return reply({ code: '23505' }, 409); db.friends.push({ ...body }); return reply([body], 201); }
+      if (opts.method === 'PATCH') { match.forEach((r) => Object.assign(r, body)); return reply(match); }
+      if (opts.method === 'DELETE') { db.friends = db.friends.filter((r) => !match.includes(r)); return reply([]); }
+      return reply(match);
+    }
+    if (u.pathname.endsWith('/meadow_gifts')) {
+      if (opts.method === 'POST') { if (db.gifts.some((g) => g.from_user === body.from_user && g.to_code === body.to_code && g.day === body.day)) return reply({ code: '23505' }, 409); db.gifts.push({ ...body, claimed: false }); return reply([], 201); }
+      const to = eq(u, 'to_code'), from = eq(u, 'from_user'), day = eq(u, 'day');
+      const match = db.gifts.filter((g) => (!to || g.to_code === to) && (!from || g.from_user === from) && (!day || g.day === day) && (u.searchParams.get('claimed') !== 'is.false' || !g.claimed));
+      if (opts.method === 'PATCH') { match.forEach((g) => Object.assign(g, body)); return reply(match); }
+      return reply(match);
+    }
+    return reply({});
+  };
+  Cloud._setFetch(fake);
+  localStorage.removeItem('meadow.session');
+  await Cloud.signIn('t@x', 'pw');
+  const w = fresh(); rich(w, 9);
+  const snap = farmSnapshot(w.state);
+  ok(snap.objects && snap.workers && !snap.inv && !snap.settings && !snap.autoSell, 'Friends see the farm, not its storage or settings');
+  const mine = await Cloud.share('Bea’s Farm', snap);
+  ok(/^[A-Z0-9]{6}$/.test(mine.code) && (await Cloud.myShare()).name === 'Bea’s Farm', 'Sharing gives a 6-character farm code', mine.code);
+  const again = await Cloud.share('Bea’s Meadow', snap);
+  ok(again.code === mine.code && db.friends.length === 1, 'Renaming keeps the same code');
+  const seen = await Cloud.fetchFarm(mine.code.toLowerCase());
+  ok(seen && seen.farm.level === 9, 'A friend can look up a farm by its code (any case)');
+  ok(await Cloud.fetchFarm('ZZZZZZ') === null, 'Unknown codes find nothing');
+  // a second player sends gifts
+  db.me = 'u2'; localStorage.removeItem('meadow.session'); await Cloud.signIn('b@x', 'pw');
+  ok(await Cloud.sendGift(mine.code, 'Pip', '2026-11-02') === true, 'A friend can send a gift basket');
+  ok(await Cloud.sendGift(mine.code, 'Pip', '2026-11-02') === false, 'Only one gift per friend per day');
+  ok((await Cloud.giftsSentToday('2026-11-02')).includes(mine.code), 'The game remembers who got a gift today');
+  db.me = 'u1'; localStorage.removeItem('meadow.session'); await Cloud.signIn('t@x', 'pw');
+  const got = await Cloud.openGifts(mine.code);
+  ok(got.length === 1 && got[0].from_name === 'Pip' && (await Cloud.openGifts(mine.code)).length === 0, 'Gifts open once, never twice');
+  const r = E.giftReward(10);
+  ok(r.coins > 0 && r.coins < 5000, 'A gift basket’s size comes from the farm that opens it', JSON.stringify(r));
+  await Cloud.unshare();
+  ok(!db.friends.length && await Cloud.myShare() === null, 'You can stop sharing any time');
+  db.setUp = false;
+  let err = null; try { await Cloud.myShare(); } catch (e) { err = e; }
+  ok(err instanceof Cloud.NotSetUp, 'Without the friends tables the game says friends aren’t on yet');
+  await Cloud.signOut();
+  localStorage.removeItem('meadow.sync.u1'); localStorage.removeItem('meadow.sync.u2');
+  Cloud._setFetch((...a) => fetch(...a));
 }
 
 // ---- report ----

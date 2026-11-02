@@ -1,7 +1,7 @@
 // The quarry: a separate little map reached by a trail from the farm's edge.
 // Miners chop trees and mine rocks and ore veins, carry what they get to the
 // cart by the trail, and it lands in the material shed. Veins regrow.
-import { QUARRY, QZONES, QNODES } from './data.js';
+import { QUARRY, QZONES, QNODES, FINDS, FIND_CHANCE } from './data.js';
 import { hash2 } from './world.js';
 import { minerSpeed, minerDur, addXp } from './sim.js';
 
@@ -96,6 +96,12 @@ function minerStep(world, w, dt) {
       w.carry = { item: K.item, qty: (w.carry?.qty || 0) + 1 };
       addXp(world, w, 1);
       if (K.gem && Math.random() < K.gem) { world.addMat('gem', 1); world.events.push({ t: 'gem' }); }
+      // now and then a fossil or relic turns up (rarer ones deeper in)
+      if (Math.random() < FIND_CHANCE) {
+        const pool = FINDS.slice(0, n.z + 1).flat(), k = pool[Math.floor(Math.random() * pool.length)];
+        const f = world.state.finds; f[k] = (f[k] || 0) + 1;
+        world.events.push({ t: 'find', item: k });
+      }
       world.events.push({ t: 'qhit', n, item: K.item });
       if (n.hp <= 0) n.re = K.regrow;
       if (n.hp <= 0 || w.carry.qty >= world.fx.carry || world.mat(K.item) + w.carry.qty >= world.shedCap) { release(w); }

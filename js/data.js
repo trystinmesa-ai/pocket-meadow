@@ -137,6 +137,29 @@ export const ITEMS = {
   iron:       { name: 'Iron Ore', value: 15, mat: true, icon: { k: 'ore', c: '#9aa6b8', c2: '#d8e0ec' } },
   gold:       { name: 'Gold Ore', value: 32, mat: true, icon: { k: 'ore', c: '#f4c542', c2: '#fff0a0' } },
   gem:        { name: 'Gemstone', value: 140, mat: true, icon: { k: 'gem' } },
+  // --- fish species: the dock sometimes lands something special ---
+  perch:      { name: 'Yellow Perch', value: 30, fishy: true, icon: { k: 'fish', c: '#d8b040', l: '#f4e080' } },
+  trout:      { name: 'Rainbow Trout', value: 42, fishy: true, icon: { k: 'fish', c: '#6aa070', l: '#f0a0b0' } },
+  catfish:    { name: 'Catfish', value: 48, fishy: true, icon: { k: 'fish', c: '#6a5a4a', l: '#a89a80' } },
+  salmon:     { name: 'Silver Salmon', value: 58, fishy: true, icon: { k: 'fish', c: '#a8b8c8', l: '#f08a70' } },
+  pike:       { name: 'Northern Pike', value: 52, fishy: true, icon: { k: 'fish', c: '#4a7a4a', l: '#c8d890' } },
+  eel:        { name: 'River Eel', value: 64, fishy: true, icon: { k: 'fish', c: '#3a4a5a', l: '#6a8a9a' } },
+  koi:        { name: 'Golden Koi', value: 320, fishy: true, icon: { k: 'fish', c: '#f0902e', l: '#fff0c0' } },
+  sturgeon:   { name: 'Ancient Sturgeon', value: 520, fishy: true, icon: { k: 'fish', c: '#5a5a6a', l: '#c8c0b0' } },
+  // --- treasures from happy animals ---
+  goldegg:    { name: 'Golden Egg', value: 150, icon: { k: 'egg', c: '#f4c542' } },
+  cream:      { name: 'Jersey Cream', value: 120, icon: { k: 'milk' } },
+  silkwool:   { name: 'Silky Wool', value: 160, icon: { k: 'yarn', c: '#fff4fa' } },
+  blueegg:    { name: 'Speckled Blue Egg', value: 110, icon: { k: 'egg', c: '#a8d8f0' } },
+  // --- finds dug up in the quarry (kept on the finds shelf, not the barn) ---
+  arrowhead:  { name: 'Flint Arrowhead', value: 60, find: true, icon: { k: 'find', f: 'arrow' } },
+  ammonite:   { name: 'Ammonite', value: 90, find: true, icon: { k: 'find', f: 'spiral' } },
+  fernfossil: { name: 'Fern Fossil', value: 80, find: true, icon: { k: 'find', f: 'fern' } },
+  oldcoin:    { name: 'Old Copper Coin', value: 110, find: true, icon: { k: 'find', f: 'coin' } },
+  trilobite:  { name: 'Trilobite', value: 140, find: true, icon: { k: 'find', f: 'bug' } },
+  brooch:     { name: 'Lost Brooch', value: 220, find: true, icon: { k: 'find', f: 'brooch' } },
+  dinotooth:  { name: 'Dinosaur Tooth', value: 300, find: true, icon: { k: 'find', f: 'tooth' } },
+  amber:      { name: 'Amber Drop', value: 380, find: true, icon: { k: 'find', f: 'amber' } },
 };
 
 // ---------- Crops (planted on field plots) ----------
@@ -476,6 +499,9 @@ export const DEFS = {
   goldscarecrow:{ name: 'Golden Scarecrow', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'all', charm: 120, light: 1 },
 
   // debris that turns up on open land; farmhands clear it for materials
+  // shelters the fields around it: any crop grows here in any season (out-of-season ones a bit slower)
+  greenhouse:  { name: 'Greenhouse', cat: 'utility', w: 3, h: 2, level: 14, cost: grow(25000, 1.6), gh: 2,
+    desc: 'Plots within 2 tiles grow any crop in any season (out-of-season crops at 75% speed) and shrug off heat waves.' },
   // only sold by the travelling merchant
   geode:       { name: 'Crystal Geode', cat: 'decor', w: 1, h: 1, level: 1, cost: 12000, merchant: true, charm: 30 },
   starlamp:    { name: 'Star Lantern', cat: 'decor', w: 1, h: 1, level: 1, cost: 18000, merchant: true, charm: 35, light: 1, tall: true },
@@ -807,6 +833,58 @@ export const PERKS = {
   pickaxe:   { name: 'Sturdy Pickaxe', desc: 'Miners work 20% faster, for good.', cost: 25000, fx: { mine: 0.2 } },
   satchel:   { name: 'Leather Satchel', desc: 'Farmhands carry 1 more item, for good.', cost: 40000, fx: { carry: 1 } },
 };
+
+// ---------- Weather events ----------
+export const WEATHER = {
+  clear:   { name: 'Clear skies', desc: 'A fine day on the farm.' },
+  rain:    { name: 'Rain', desc: 'Rain waters every field for free.' },
+  storm:   { name: 'Storm', desc: 'Wild wind and rain: fields get watered and branches and rocks blow onto your land (free wood and stone). Eels love it.' },
+  heat:    { name: 'Heat wave', desc: 'Hot and dry: crops that aren’t watered grow 25% slower. Wells, sprinklers and greenhouses help.' },
+  rainbow: { name: 'Rainbow', desc: 'After the rain: gold-star harvests come 5% more often.' },
+};
+
+// ---------- Fish ----------
+// Every catch at a dock has a chance to be a special fish, depending on the
+// season, the weather and the time of day. They go straight to storage.
+export const SPECIES_CHANCE = 0.2;
+export const FISH = [
+  { id: 'perch', w: 10 },
+  { id: 'trout', w: 6, seasons: ['spring', 'summer'] },
+  { id: 'salmon', w: 6, seasons: ['autumn'] },
+  { id: 'pike', w: 6, seasons: ['winter'] },
+  { id: 'catfish', w: 6, night: true },
+  { id: 'eel', w: 7, weather: ['rain', 'storm'] },
+  { id: 'koi', w: 0.4 },
+  { id: 'sturgeon', w: 0.5, weather: ['storm'] },
+];
+
+// ---------- Animal friendship ----------
+// Animals grow happier while they're fed and when you give them a pat (once
+// every half hour per building). Happy animals produce up to 25% faster and
+// now and then give a treasure. Hungry ones slowly lose heart.
+export const PAT_EVERY = 30 * 60;
+export const ANIMAL_TREASURE = { coop: 'goldegg', cowshed: 'cream', sheeppen: 'silkwool', duckhouse: 'blueegg' };
+
+// ---------- Quarry finds ----------
+// Each swing in the quarry has a small chance to turn up a fossil or relic;
+// deeper zones hold rarer ones. They're kept on the finds shelf.
+export const FIND_CHANCE = 0.015;
+export const FINDS = [['arrowhead', 'ammonite', 'fernfossil'], ['oldcoin', 'trilobite'], ['brooch', 'dinotooth'], ['amber']];
+
+// ---------- Museum ----------
+// Donate one of each thing to fill the museum's wings; each wing finished
+// gives a lasting bonus. perk keys as in farmPerks.
+const CRAFTED = new Set(Object.values(DEFS).flatMap((d) => (d.recipes || []).map((r) => r.out)));
+export const MUSEUM_WINGS = [
+  { id: 'harvest', name: 'Harvest Hall', test: (k) => !!CROPS[k] || ['apple', 'cherry', 'orange', 'plum', 'peach', 'sap'].includes(k), perk: { grow: 0.03 }, perkText: 'Crops grow 3% faster' },
+  { id: 'kitchen', name: 'Kitchen Gallery', test: (k) => CRAFTED.has(k), perk: { craft: 0.03 }, perkText: 'Workshops work 3% faster' },
+  { id: 'barn', name: 'Barnyard Room', test: (k) => ['egg', 'milk', 'wool', 'honey', 'duckegg', 'goldegg', 'cream', 'silkwool', 'blueegg'].includes(k), perk: { animal: 0.03 }, perkText: 'Animals produce 3% faster' },
+  { id: 'river', name: 'River Aquarium', test: (k) => k === 'fish' || !!ITEMS[k].fishy, perk: { sell: 0.03 }, perkText: 'Everything sells for 3% more' },
+  { id: 'stone', name: 'Stone & Fossil Room', test: (k) => !!ITEMS[k].mat || !!ITEMS[k].find, perk: { mine: 0.15 }, perkText: 'Miners work 15% faster' },
+];
+export const MUSEUM_REWARD = { coins: 50000, charm: 60 };
+for (const f of FISH) addTo(SOURCES, f.id, 'dock');
+for (const [t, k] of Object.entries(ANIMAL_TREASURE)) addTo(SOURCES, k, t);
 
 // ---------- Weather ----------
 export const RAIN_BLOCK = 20 * 60;     // weather changes in 20 minute blocks

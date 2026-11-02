@@ -2,7 +2,8 @@
 // farmhands' job system. The same code runs live (with walking along real
 // paths) and in fast mode for offline catch-up (walking becomes a timer).
 import { DEFS, ITEMS, CROPS, ROLES, ALL_TASKS, ORDER_SLOTS, ORDER_EVERY, ORDER_NAMES, RAIN_BLOCK, RAIN_CHANCE,
-  MAX_WORKER_LEVEL, workerXpNeeded, DEBRIS_EVERY, debrisMax, MAP, VILLAGERS, GIANT_CROPS, GIANT_CHANCE, GOLD_MULT } from './data.js';
+  MAX_WORKER_LEVEL, workerXpNeeded, DEBRIS_EVERY, debrisMax, MAP, VILLAGERS, GIANT_CROPS, GIANT_CHANCE, GOLD_MULT,
+  FISH, SPECIES_CHANCE, ANIMAL_TREASURE } from './data.js';
 import { stepQuarry } from './quarry.js';
 import { idx, doorTile, hash2, cropUnlocked } from './world.js';
 import { findPath } from './path.js';
@@ -14,10 +15,18 @@ const R = Math.random;
 const WALK = 2.3; // tiles per second
 
 // ---------- small helpers ----------
-export function isRaining(world, tMs) {
-  const block = Math.floor(tMs / 1000 / RAIN_BLOCK);
-  return hash2(block, 7, world.state.seed % 9973) < RAIN_CHANCE;
+// Weather comes in 20-minute blocks worked out from the time and the farm's seed.
+export function weatherAt(world, tMs) {
+  const block = Math.floor(tMs / 1000 / RAIN_BLOCK), seed = world.state.seed % 9973;
+  const h = hash2(block, 7, seed);
+  if (h < RAIN_CHANCE) return hash2(block, 13, seed) < 0.25 ? 'storm' : 'rain';
+  if (seasonAt(tMs).id === 'summer' && h < RAIN_CHANCE + 0.1) return 'heat';
+  if (hash2(block - 1, 7, seed) < RAIN_CHANCE && hash2(block, 17, seed) < 0.4) return 'rainbow';
+  return 'clear';
 }
+export function isRaining(world, tMs) { const w = weatherAt(world, tMs); return w === 'rain' || w === 'storm'; }
+/** Can this plot grow that crop right now? (greenhouses shelter seasonal crops) */
+export const plantable = (world, p, crop = p.crop) => canPlantNow(crop, world.season) || world.sheltered.has(idx(p.x, p.y));
 
 export const animalCount = (a) => DEFS[a.type].animal.count + (a.lvl - 1);
 export const animalCap = (a) => 6 + 4 * a.lvl;
@@ -158,16 +167,21 @@ export function step(world, dt, fast, now) {
   world.time = (world.time || 0) + dt;
   world.now = now;
   world.fast = fast;
-  const rain = isRaining(world, now);
+  world.weather = weatherAt(world, now);
+  const rain = world.weather === 'rain' || world.weather === 'storm';
   world.season = seasonAt(now);
   world.festival = festivalOn(now);
   world.raining = rain;
+  const heat = world.weather === 'heat';
 
   let ripe = 0, empty = 0, dry = 0;
   for (const p of world.plots) {
     if (p.st === 'grow') {
       if (!p.wet && (rain || world.sprinkled.has(idx(p.x, p.y)))) p.wet = true;
-      p.p += (dt / CROPS[p.crop].time) * fx.grow * (p.wet ? fx.water : 1) * seasonGrowth(p.crop, world.season);
+      const shel = world.sheltered.size && world.sheltered.has(idx(p.x, p.y));
+      // greenhouse plots grow out-of-season crops at 75%, and heat waves only slow unwatered crops outside
+      const sg = shel && !canPlantNow(p.crop, world.season) ? 0.75 : seasonGrowth(p.crop, world.season);
+      p.p += (dt / CROPS[p.crop].time) * fx.grow * (p.wet ? fx.water : heat && !shel ? 0.75 : 1) * sg;
       if (p.p >= 1) { p.p = 1; p.st = 'ripe'; if (GIANT_CROPS.has(p.crop)) tryGiant(world, p); }
       else if (!p.wet && p.p < 0.75) dry++;
     }
@@ -183,11 +197,16 @@ export function step(world, dt, fast, now) {
   for (const a of world.animals) {
     const A = DEFS[a.type].animal, cap = animalCap(a);
     if (a.off) { if (a.out > 0) animalOut++; continue; }
+    // fed animals slowly grow happier (to 60 on their own; pats take them higher), hungry ones less so
+    a.joy = Math.max(0, Math.min(100, (a.joy ?? 30) + (a.feed > 0 ? (a.joy < 60 ? dt / 120 : 0) : -dt / 60)));
     if (a.feed > 0 && a.out < cap) {
-      a.prog += (dt * animalCount(a) * fx.animal) / A.time;
+      a.prog += (dt * animalCount(a) * fx.animal * (1 + 0.25 * a.joy / 100)) / A.time;
       while (a.prog >= 1 && a.feed > 0 && a.out < cap) {
         a.prog -= 1; a.feed--; a.out++;
         s.stats.harvest[A.item] = (s.stats.harvest[A.item] || 0) + 1;
+        // a very happy animal now and then gives a treasure, straight to storage
+        const tr = ANIMAL_TREASURE[a.type];
+        if (tr && R() < 0.04 * (a.joy / 100) ** 2 && world.addItem(tr, 1)) { s.stats.harvest[tr] = (s.stats.harvest[tr] || 0) + 1; world.events.push({ t: 'treasure', item: tr, x: a.x, y: a.y }); }
       }
       if (a.feed <= 0 || a.out >= cap) a.prog = Math.min(a.prog, 0.99);
     }
@@ -198,7 +217,13 @@ export function step(world, dt, fast, now) {
     if (!h.off && h.out < hiveCap(h)) {
       const H = DEFS[h.type].hive;
       h.prog += (dt * fx.animal * hiveRate(h)) / H.time;
-      if (h.prog >= 1) { h.prog -= 1; h.out++; s.stats.harvest[H.item] = (s.stats.harvest[H.item] || 0) + 1; }
+      if (h.prog >= 1) {
+        h.prog -= 1;
+        // docks sometimes land a special fish, which goes straight to storage
+        const sp = H.item === 'fish' && R() < SPECIES_CHANCE ? pickFish(world, world.now) : null;
+        if (sp && world.addItem(sp, 1)) { s.stats.harvest[sp] = (s.stats.harvest[sp] || 0) + 1; world.events.push({ t: 'catch', item: sp, x: h.x, y: h.y }); }
+        else { h.out++; s.stats.harvest[H.item] = (s.stats.harvest[H.item] || 0) + 1; }
+      }
     }
     if (h.out > 0) animalOut++;
   }
@@ -223,6 +248,15 @@ export function step(world, dt, fast, now) {
   s.simTime = now;
 }
 
+/** Which special fish bites now: depends on season, weather and the hour. */
+export function pickFish(world, now) {
+  const hr = new Date(now || Date.now()).getHours(), night = hr >= 20 || hr < 5;
+  const ok = FISH.filter((f) => (!f.seasons || f.seasons.includes(world.season.id)) && (!f.night || night) && (!f.weather || f.weather.includes(world.weather)));
+  let r = R() * ok.reduce((a, f) => a + f.w, 0);
+  for (const f of ok) { if ((r -= f.w) < 0) return f.id; }
+  return ok[0]?.id || null;
+}
+
 // ---------- construction & debris ----------
 function buildTick(world, dt) {
   let done = false;
@@ -235,11 +269,12 @@ function buildTick(world, dt) {
 // Now and then a branch or rock turns up on open land (never next to an entrance).
 function debrisTick(world, dt) {
   const s = world.state;
+  const storm = world.weather === 'storm';
   s.debrisT = (s.debrisT || 0) + dt;
-  if (s.debrisT < DEBRIS_EVERY) return;
+  if (s.debrisT < (storm ? DEBRIS_EVERY / 4 : DEBRIS_EVERY)) return;
   s.debrisT = 0;
   const parcels = s.map.owned.filter(Boolean).length;
-  if (world.debris.length >= debrisMax(parcels)) return;
+  if (world.debris.length >= debrisMax(parcels) + (storm ? 3 : 0)) return;
   const roll = R();
   const type = roll < 0.5 ? 'rubble_log' : roll < 0.88 || s.level < DEFS.rubble_ore.level ? 'rubble_rock' : 'rubble_ore';
   const own = [];
@@ -472,7 +507,7 @@ const FIND = {
   plant(world, w) {
     if (!world.avail.empty) return null;
     const s = world.state;
-    const p = nearest(world.plots, w, (o) => o.st === 'empty' && o.crop && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && canPlantNow(o.crop, world.season) && canAffordSeeds(world, o.crop));
+    const p = nearest(world.plots, w, (o) => o.st === 'empty' && o.crop && !o._c && !bad(world, o) && cropUnlocked(s, o.crop) && plantable(world, o) && canAffordSeeds(world, o.crop));
     if (!p) return null;
     const job = new Job(w, 'plant', `Planting ${ITEMS[p.crop].name}`).claim(p, '_c');
     job.go(p.x, p.y, p.id).do('hoe', wDur(world, w, 1.0), () => {
@@ -699,7 +734,7 @@ function harvestSteps(world, w, job, p) {
     for (const q of block) n += (c.yield + (R() < world.fx.bumper ? 1 : 0)) * (p.giant ? 2 : 1);
     world.state.stats.harvest[item] = (world.state.stats.harvest[item] || 0) + n;
     // now and then a gold-star one: kept on the prize shelf, worth more
-    const goldP = world.fx.gold + 0.005 * (w.lvl - 1) + (p.wet ? 0.02 : 0);
+    const goldP = world.fx.gold + 0.005 * (w.lvl - 1) + (p.wet ? 0.02 : 0) + (world.weather === 'rainbow' ? 0.05 : 0);
     let stars = 0;
     for (let i = 0; i < n; i++) if (R() < goldP) stars++;
     if (stars) { n -= stars; const g = world.state.gold; g[item] = (g[item] || 0) + stars; float(world, p.x, p.y - 1, `★${stars}`, item); }

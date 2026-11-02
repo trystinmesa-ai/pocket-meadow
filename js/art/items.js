@@ -3,6 +3,19 @@ import { C, sprite, cached, shade } from './core.js';
 import { ITEMS } from '../data.js';
 
 const K = {
+  find(P, d) {
+    const st = '#c8b898', stD = '#a89878';
+    if (d.f === 'arrow') { P.line(5, 0, 1, 7, '#6a6a7a'); P.line(5, 0, 9, 7, '#6a6a7a'); P.r(3, 3, 4, 4, '#8a8a9a'); P.hl(2, 7, 7, '#6a6a7a'); P.vl(5, 7, 3, C.woodD); P.px(4, 3, '#c8c8d8'); return; }
+    if (d.f === 'coin') { P.oval(0, 0, 10, 10, '#a86a3a'); P.oval(1, 1, 8, 8, '#d0884a'); P.r(4, 3, 2, 4, '#a86a3a'); P.px(2, 2, '#f0b070'); return; }
+    if (d.f === 'brooch') { P.oval(1, 1, 8, 8, C.gold); P.oval(3, 3, 4, 4, '#d94570'); P.px(4, 3, '#ffb0c8'); P.px(5, 0, C.goldL); P.px(0, 5, C.goldD); P.px(9, 5, C.goldD); return; }
+    if (d.f === 'amber') { P.oval(1, 1, 8, 9, '#e0901e'); P.oval(2, 2, 4, 4, '#f4c050'); P.px(5, 5, '#3a2a1e'); P.px(6, 5, '#3a2a1e'); P.px(3, 2, '#fff0a0'); return; }
+    if (d.f === 'tooth') { P.line(2, 9, 5, 0, '#f4ecd8'); P.line(3, 9, 6, 1, '#f4ecd8'); P.line(4, 9, 7, 2, '#e0d4b8'); P.hl(2, 9, 6, '#c8b898'); P.px(5, 1, '#ffffff'); return; }
+    // a stone slab with a fossil pressed into it
+    P.rr(0, 1, 10, 9, stD); P.rr(1, 1, 8, 8, st);
+    if (d.f === 'spiral') { P.oval(2, 2, 6, 6, '#8a7a5a'); P.oval(3, 3, 4, 4, st); P.px(5, 5, '#8a7a5a'); P.px(4, 4, '#8a7a5a'); }
+    else if (d.f === 'fern') { P.vl(5, 2, 7, '#5a7a4a'); for (let y = 3; y < 8; y += 2) { P.px(4, y, '#5a7a4a'); P.px(3, y - 1, '#5a7a4a'); P.px(6, y, '#5a7a4a'); P.px(7, y - 1, '#5a7a4a'); } }
+    else { P.oval(2, 2, 6, 7, '#7a6a5a'); for (let y = 3; y < 8; y += 2) P.hl(3, y, 4, st); P.px(5, 2, '#5a4a3a'); }
+  },
   log(P) {
     P.r(0, 3, 10, 5, C.wood); P.hl(0, 3, 10, C.woodL); P.hl(0, 7, 10, C.woodD);
     P.oval(7, 3, 3, 5, '#d8a870'); P.px(8, 5, C.woodD); P.px(2, 5, C.woodD); P.px(4, 4, C.woodD);
@@ -160,7 +173,7 @@ const K = {
   coffeebean(P) { for (const [x, y] of [[0, 1], [5, 2], [2, 5]]) { P.oval(x, y, 5, 5, '#6a3a1e'); P.line(x + 1, y + 3, x + 3, y + 1, '#3a2010'); P.px(x + 1, y + 1, '#9a6a3a'); } },
   bucket(P) { P.line(1, 2, 5, 0, C.stoneDD); P.line(5, 0, 9, 2, C.stoneDD); P.r(1, 3, 8, 7, '#9aa8b0'); P.r(1, 3, 8, 2, '#d8a050'); P.vl(2, 5, 4, '#c8d4dc'); P.hl(1, 9, 8, '#6a7882'); },
   fish(P, d) {
-    const c = d.smoked ? '#b8783a' : '#6a9ac8', l = d.smoked ? '#e0a858' : '#a8d0f0';
+    const c = d.smoked ? '#b8783a' : d.c || '#6a9ac8', l = d.smoked ? '#e0a858' : d.l || '#a8d0f0';
     P.oval(1, 2, 7, 6, c); P.r(7, 3, 3, 1, c); P.r(8, 2, 2, 1, c); P.r(8, 6, 2, 1, c); P.r(7, 5, 3, 1, c); P.hl(2, 4, 5, l); P.px(2, 3, '#1e1e2a'); P.px(4, 7, shade(c, -0.3));
   },
   bowl(P, d) {

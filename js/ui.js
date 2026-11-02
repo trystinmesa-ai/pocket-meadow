@@ -14,10 +14,13 @@ import { pathThumb, soilTile } from './art/land.js';
 import { workerFrame, petFrame } from './art/chars.js';
 import { fmtShort } from './render.js';
 import * as Cloud from './cloud.js';
-import { exportSave, parseSave } from './save.js';
+import { exportSave, parseSave, farmSnapshot } from './save.js';
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 import { seasonAt, seasonDaysLeft, festivalOn, untilFestival, inSeason, canPlantNow } from './seasons.js';
 import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD, MATS, matsFor, upgMatsFor, buildTime, needsBuilding,
-  QZONES, QNODES, SHED_MAX, shedCap, shedCost, VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT } from './data.js';
+  QZONES, QNODES, SHED_MAX, shedCap, shedCost, VILLAGERS, HEARTS, heartsOf, PROJECTS, PERKS, GOLD_MULT,
+  WEATHER, FISH, ANIMAL_TREASURE, MUSEUM_WINGS, MUSEUM_REWARD, PAT_EVERY } from './data.js';
+import { farmPerks, museumWings } from './world.js';
 import { merchantHere, nextVisit, stockOf, offerName, soldOut } from './merchant.js';
 import { debrisSprite } from './art/quarry.js';
 
@@ -73,6 +76,10 @@ function sourceOf(item) {
     if (d.hive && d.hive.item === item) return `Build a ${d.name}`;
     for (const r of d.recipes || []) if (r.out === item) return `Made in the ${d.name} from ${Object.keys(r.in).map((k) => ITEMS[k].name).join(', ')}`;
   }
+  if (ITEMS[item].find) return 'Dug up now and then by miners in the quarry (rarer ones deeper in)';
+  if (ITEMS[item].fishy) return 'Caught now and then at a Fishing Dock (it depends on the season, weather and time of day)';
+  if (Object.values(ANIMAL_TREASURE).includes(item)) return 'A treasure from very happy animals';
+  if (ITEMS[item].mat) return item === 'wood' || item === 'stone' ? 'Clearing debris, or the quarry' : 'Mining in the quarry';
   return 'Keep farming!';
 }
 /** A tappable item icon that opens its info card. */
@@ -117,11 +124,11 @@ export class UI {
     $('#hud').innerHTML = `
       <button class="res" data-act="sheet" data-v="market" aria-label="Coins">${img('coin')}<b id="h-coins">0</b></button>
       <button class="res lvl" data-act="levelinfo" aria-label="Farm level">${img('star')}<b>Lv <span id="h-level">1</span></b><span class="bar"><i id="h-xp"></i></span></button>
-      <button class="res" data-act="sheet" data-v="market" aria-label="Storage">${img('box')}<b id="h-store">0/0</b></button>
+      <button class="res" data-act="sheet" data-v="inventory" aria-label="Everything you own">${img('box')}<b id="h-store">0/0</b></button>
       <button class="res charm" data-act="charminfo" aria-label="Charm">${img('heart')}<b id="h-charm">0</b></button>
       <button class="res season" id="h-season" data-act="sheet" data-v="season" aria-label="Season and festival"></button>
       <button class="res merchant" id="h-merchant" data-act="openmerchant" aria-label="Travelling merchant" hidden>${img('market')}<b>Merchant</b></button>
-      <span class="res wx" id="h-wx"></span>`;
+      <button class="res wx" id="h-wx" data-act="weatherinfo" aria-label="Weather"></button>`;
     const dock = [
       ['build', 'hammer', 'Build'], ['workers', 'people', 'Farmhands', 'Crew'], ['market', 'market', 'Market'],
       ['orders', 'scroll', 'Village'], ['journal', 'book', 'Journal'], ['upgrades', 'up', 'Upgrades', 'Perks'], ['land', 'map', 'Land'], ['menu', 'menu', 'Menu'],
@@ -152,6 +159,10 @@ export class UI {
   act(a, d, el) {
     const w = this.w, s = this.s;
     const fail = (why) => { if (why) this.toast(why, 'bad'); return !why; };
+    if (['sharefarm', 'unshare', 'addpal', 'removepal', 'visitpal', 'giftpal'].includes(a)) { this.palAct(a, d); return; }
+    if (a === 'leavevisit') { this.g.leaveVisit(); return; }
+    // while visiting, anything else takes you back home first
+    if (this.g.visitWorld && !['close', 'zoom', 'modalbtn', 'collect', 'weatherinfo', 'levelinfo', 'charminfo', 'tab'].includes(a)) this.g.leaveVisit();
     // building and buying land happen on the farm
     if (this.inQuarry() && (a === 'landmode' || a === 'pick' || a === 'removemode' || (a === 'sheet' && d.v === 'build'))) this.goFarm();
     switch (a) {
@@ -160,6 +171,11 @@ export class UI {
       case 'tab': this.tab[d.sheet] = d.v; this.renderSheet(); break;
       case 'zoom': this.g.input.zoomBy(+d.v); break;
       case 'levelinfo': this.levelInfo(); break;
+      case 'donate': if (fail(E.donate(w, d.item))) { this.toast(`${ITEMS[d.item].name} is on display!`, 'good'); this.g.dirty(); this.renderSheet(); } break;
+      case 'donateall': { const n = E.donateAll(w); if (n) { this.toast(`${n} new thing${n > 1 ? 's' : ''} on display!`, 'good'); this.g.dirty(); } this.renderSheet(); break; }
+      case 'museumtab': this.tab.journal = 'museum'; this.openSheet('journal'); break;
+      case 'patanimals': if (fail(E.patAnimals(w, this.sel))) { this.toast('They love it!', 'good'); const o = this.sel, dd = DEFS[o.type]; for (let i = 0; i < 6; i++) this.g.R.particles.push({ k: 'heart', x: (o.x + Math.random() * dd.w) * TILE, y: o.y * TILE + 4, vx: (Math.random() - 0.5) * 8, vy: -12, life: 1.2 }); this.g.dirty(); this.renderCard(); } break;
+      case 'weatherinfo': { const x = WEATHER[w.weather || 'clear']; this.toast(`${x.name}: ${x.desc}`); break; }
       case 'charminfo': this.toast(`Charm ${Math.floor(w.charm)}: everything sells for +${Math.round(w.charmBonus() * 100)}% (max +25%). Decorations add charm.`); break;
       // build
       case 'pick': this.startPlacing(d.type, d.crop ? { crop: d.crop } : {}); break;
@@ -270,7 +286,9 @@ export class UI {
     st.parentElement.classList.toggle('full', used >= w.capacity);
     $('#h-charm').textContent = Math.floor(w.charm);
     const sync = Cloud.user() ? `<i class="sync ${Cloud.status.state}" title="Cloud save: ${Cloud.status.state}"></i>` : '';
-    $('#h-wx').innerHTML = (w.raining ? img(w.season?.id === 'winter' ? 'winter' : 'rain') : img(this.g.R.darkness() > 0.2 ? 'moon' : 'sun')) + sync;
+    const wi = { storm: 'storm', heat: 'heat', rainbow: 'rainbow' }[w.weather] || (w.raining ? (w.season?.id === 'winter' ? 'winter' : 'rain') : this.g.R.darkness() > 0.2 ? 'moon' : 'sun');
+    const wh = img(wi) + sync;
+    if ($('#h-wx')._h !== wh) { $('#h-wx').innerHTML = wh; $('#h-wx')._h = wh; }
     const sea = seasonAt(Date.now()), fest = festivalOn(Date.now());
     const sh = `${img(sea.id)}<b>${fest ? sea.festival : sea.name}</b>${fest ? '' : `<small>${seasonDaysLeft(Date.now())}d</small>`}`;
     const se = $('#h-season');
@@ -319,6 +337,7 @@ export class UI {
 
   // ---------- sheets ----------
   openSheet(name) {
+    if (name === 'menu' && this.sheet !== 'menu') this.pals = null; // fresh friend info each time
     if (name && this.mode) this.setMode(null);
     this.sheet = name;
     for (const b of document.querySelectorAll('#dock button')) b.classList.toggle('on', b.dataset.v === name || (b.dataset.v === 'land' && this.mode?.k === 'land'));
@@ -522,13 +541,12 @@ export class UI {
         <div class="ib"><button class="btn small gold" data-act="sellgold" data-item="${k}" data-n="all">Sell all</button></div></div>`;
       html += '</div>';
     }
-    html += `<h3>${itemImg('wood')} Building materials</h3><div class="chips matrow" data-live="mats">${this.matsLine()}</div>
-      <div class="row"><span class="hint">Kept in the material shed (up to ${fmt(w.shedCap)} each), not the barn.</span><button class="btn small" data-act="sheet" data-v="quarry">${img('pick')} Quarry & shed</button></div>`;
+    html += `<div class="row"><span class="hint">Building materials and finds are kept separately: see everything you own in the Inventory.</span><button class="btn small" data-act="sheet" data-v="inventory">${img('box')} Inventory</button></div>`;
     return { title: `${img('market', 'pi big')} Market`, html };
   }
   matsLine() { return MATS.map((k) => `<span class="mat">${infoImg(k)}${fmt(this.w.mat(k))}</span>`).join(''); }
   live_market() {
-    const w = this.w, out = { store: `${fmt(w.used())} / ${fmt(w.capacity)} stored`, mats: this.matsLine() };
+    const w = this.w, out = { store: `${fmt(w.used())} / ${fmt(w.capacity)} stored` };
     for (const k in ITEMS) if (w.haveAll(k)) out[`q${k}`] = this.qtyText(k);
     return out;
   }
@@ -569,6 +587,50 @@ export class UI {
     return html;
   }
   live_quarry() { const out = {}; for (const k of MATS) out[`m${k}`] = fmt(this.w.mat(k)); return out; }
+
+  // ---------- everything you own, wherever it is ----------
+  sheet_inventory() {
+    const w = this.w, s = this.s, tab = this.tab.inventory || 'all';
+    const place = {}; // item -> { where: n }
+    const put = (k, where, n) => { if (n > 0) ((place[k] ||= {})[where] = (place[k][where] || 0) + n); };
+    for (const k in s.inv) put(k, 'Barn', s.inv[k]);
+    for (const b of w.bldgs) { const nm = DEFS[b.type].name; for (const k in b.inp) put(k, `${nm} pantry`, b.inp[k]); for (const k in b.out) put(k, `${nm} (ready)`, b.out[k]); }
+    for (const a of w.animals.concat(w.hives)) { const d = DEFS[a.type], k = d.hive ? d.hive.item : d.animal.item; put(k, `${d.name} (ready)`, a.out); }
+    for (const p of s.piles) put(p.item, 'On the ground', p.qty);
+    for (const x of s.workers) if (x.carry) put(x.carry.item, x.role === 'miner' ? 'Miner’s basket' : 'Being carried', x.carry.qty);
+    for (const k in s.mats) put(k, 'Material shed', s.mats[k]);
+    for (const k in s.finds) put(k, 'Finds shelf', s.finds[k]);
+    const keys = Object.keys(place);
+    const total = (k) => Object.values(place[k]).reduce((a, b) => a + b, 0);
+    let html = `<p class="hint">Everything on your farm, wherever it is: the barn, workshop pantries, things waiting to be picked up, the material shed and more. Pantry and workshop stock counts for orders, bundles and selling too.</p>
+      <div class="row"><span>${img('box')} Barn ${fmt(w.used())}/${fmt(w.capacity)}</span><span>${itemImg('stone')} Shed up to ${fmt(w.shedCap)} each</span></div>`;
+    if (!keys.length) return { title: `${img('box', 'pi big')} Inventory`, tabs: this.invTabs(), html: html + '<p class="empty">Nothing yet. Your farmhands will fill this up.</p>' };
+    if (tab === 'all') {
+      const groups = [['Crops & fruit', (k) => CROPS[k] || SOURCES[k]?.some((t) => t !== 'plot' && DEFS[t]?.cat === 'tree')], ['Animal goods & fish', (k) => ITEMS[k].fishy || k === 'fish' || Object.values(ANIMAL_TREASURE).includes(k) || SOURCES[k]?.some((t) => DEFS[t]?.animal || DEFS[t]?.hive)],
+        ['Made in workshops', (k) => SOURCES[k]?.some((t) => DEFS[t]?.recipes)], ['Materials', (k) => ITEMS[k].mat], ['Finds', (k) => ITEMS[k].find]];
+      const used = new Set();
+      for (const [name, test] of groups) {
+        const list = keys.filter((k) => !used.has(k) && test(k)).sort((a, b) => total(b) - total(a));
+        if (!list.length) continue;
+        list.forEach((k) => used.add(k));
+        html += `<h3>${name}</h3><div class="inv">${list.map((k) => `<button class="invi" data-act="iteminfo" data-item="${k}" title="${esc(Object.entries(place[k]).map(([p, n]) => `${p}: ${n}`).join(', '))}">${itemImg(k, 'pi big')}<b>${fmt(total(k))}</b><small>${esc(ITEMS[k].name)}</small><i>${esc(Object.keys(place[k]).length > 1 ? `${Object.keys(place[k]).length} places` : Object.keys(place[k])[0])}</i></button>`).join('')}</div>`;
+      }
+      const rest = keys.filter((k) => !used.has(k));
+      if (rest.length) html += `<h3>Other</h3><div class="inv">${rest.map((k) => `<button class="invi" data-act="iteminfo" data-item="${k}">${itemImg(k, 'pi big')}<b>${fmt(total(k))}</b><small>${esc(ITEMS[k].name)}</small></button>`).join('')}</div>`;
+    } else {
+      const byPlace = {};
+      for (const k of keys) for (const [p, n] of Object.entries(place[k])) (byPlace[p] ||= []).push([k, n]);
+      const order = (p) => (p === 'Barn' ? 0 : p === 'Material shed' ? 2 : p === 'Finds shelf' ? 3 : /pantry/.test(p) ? 1 : 4);
+      for (const p of Object.keys(byPlace).sort((a, b) => order(a) - order(b) || a.localeCompare(b))) {
+        html += `<h3>${esc(p)}</h3><div class="oi">${byPlace[p].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="need">${infoImg(k)}<b>${fmt(n)}</b> ${esc(ITEMS[k].name)}</span>`).join('')}</div>`;
+      }
+    }
+    const golds = Object.keys(s.gold).filter((k) => s.gold[k] > 0);
+    if (golds.length) html += `<h3>${img('star')} Gold-star shelf</h3><div class="oi">${golds.map((k) => `<span class="need">${itemImg(k)}<b>${fmt(s.gold[k])}</b> ${esc(ITEMS[k].name)} ${img('star')}</span>`).join('')}</div>`;
+    html += `<div class="row center"><button class="btn small gold" data-act="sheet" data-v="market">${img('market')} Market</button><button class="btn small" data-act="sheet" data-v="quarry">${img('pick')} Quarry & shed</button><button class="btn small" data-act="museumtab">${img('book')} Museum</button></div>`;
+    return { title: `${img('box', 'pi big')} Inventory`, tabs: this.invTabs(), html };
+  }
+  invTabs() { this.tab.inventory ||= 'all'; return this.tabs('inventory', [['all', 'Everything'], ['place', 'By place']]); }
 
   sheet_orders() {
     const tab = this.tab.orders;
@@ -678,17 +740,30 @@ export class UI {
     } else if (tab === 'bundles') {
       html += this.bundlesHTML();
     } else {
-      const total = Object.keys(ITEMS).length, n = discovered(s);
-      html += `<p class="hint">Every crop, fruit and product you have ever gathered or made: <b>${n} / ${total}</b>.</p><div class="collection">`;
-      for (const k of Object.keys(ITEMS)) {
-        const got = (s.stats.harvest[k] || 0) + (s.stats.craft[k] || 0) > 0;
-        html += `<div class="ci ${got ? '' : 'unknown'}" title="${got ? esc(ITEMS[k].name) : esc(sourceOf(k))}">${itemImg(k, 'pi big')}<small>${got ? esc(ITEMS[k].name) : '???'}</small></div>`;
-      }
-      html += '</div><p class="hint">Tap and hold (or hover) a ??? to see where it comes from.</p>';
+      html += this.museumHTML();
     }
-    return { title: `${img('book', 'pi big')} Journal`, tabs: this.tabs('journal', [['goals', 'Goals'], ['ach', `Achievements${E.claimableAch(w) ? ` (${E.claimableAch(w)})` : ''}`], ['bundles', `Bundles${E.bundlesReady(w) ? ` (${E.bundlesReady(w)})` : ''}`], ['collection', 'Collection']]), html };
+    return { title: `${img('book', 'pi big')} Journal`, tabs: this.tabs('journal', [['goals', 'Goals'], ['ach', `Trophies${E.claimableAch(w) ? ` (${E.claimableAch(w)})` : ''}`], ['bundles', `Bundles${E.bundlesReady(w) ? ` (${E.bundlesReady(w)})` : ''}`], ['museum', `Museum${this.donatable() ? ` (${this.donatable()})` : ''}`]]), html };
   }
 
+  donatable() { const s = this.s; return Object.keys(ITEMS).filter((k) => !s.museum[k] && E.museumHave(this.w, k) > 0).length; }
+  museumHTML() {
+    const w = this.w, s = this.s, wings = museumWings(s);
+    const shown = Object.keys(s.museum).length, total = wings.reduce((a, x) => a + x.items.length, 0), ready = this.donatable();
+    let html = `<p class="hint">The village museum wants one of everything: crops, cooking, animal goods, fish, ore and the fossils your miners dig up. Each finished wing gives a lasting bonus. <b>${shown} / ${total}</b> on display.</p>`;
+    if (ready) html += `<div class="row"><span>${ready} thing${ready > 1 ? 's' : ''} you have can go on display</span><button class="btn small green" data-act="donateall">Donate all new</button></div>`;
+    for (const wg of wings) {
+      html += `<h3>${esc(wg.name)} <small class="shelf">${wg.n}/${wg.items.length}</small></h3><p class="hint shelfperk ${wg.done ? 'on' : ''}">${wg.done ? img('check') + ' ' : 'Finish it: '}${esc(wg.perkText)}</p><div class="collection">`;
+      for (const k of wg.items) {
+        const on = s.museum[k], have = !on && E.museumHave(w, k) > 0, seen = on || have || (s.stats.harvest[k] || 0) + (s.stats.craft[k] || 0) > 0;
+        html += on ? `<div class="ci on" title="${esc(ITEMS[k].name)}: on display">${itemImg(k, 'pi big')}<small>${esc(ITEMS[k].name)}</small></div>`
+          : have ? `<button class="ci give" data-act="donate" data-item="${k}" title="Donate a ${esc(ITEMS[k].name)}">${itemImg(k, 'pi big')}<small>Donate</small></button>`
+          : `<div class="ci ${seen ? 'missing' : 'unknown'}" title="${esc(seen ? `${ITEMS[k].name}: you'll need another one` : sourceOf(k))}">${itemImg(k, 'pi big')}<small>${seen ? esc(ITEMS[k].name) : '???'}</small></div>`;
+      }
+      html += '</div>';
+    }
+    html += `<p class="hint">Fill every wing: ${coin(MUSEUM_REWARD.coins)} and +${MUSEUM_REWARD.charm} charm. Hover or tap and hold a ??? to see where it comes from.</p>`;
+    return html;
+  }
   rewardHTML(r) {
     const out = [];
     if (r.coins) out.push(coin(r.coins));
@@ -730,14 +805,33 @@ export class UI {
         ${lock ? `<span class="lock">${img('lock')} Lv ${u.level}</span>` : max ? '<span class="max">MAX</span>' : `<button class="btn small green" data-act="upg" data-id="${u.id}" data-need="${cost}">${coin(cost)}</button>`}</div>`;
     }
     html += '</div><p class="hint">Buildings upgrade separately: tap a building on your farm.</p>';
+    html += this.bonusesHTML();
     return { title: `${img('up', 'pi big')} Upgrades`, html };
+  }
+
+  bitingNow() {
+    const w = this.w, hr = new Date().getHours(), night = hr >= 20 || hr < 5;
+    return FISH.filter((f) => f.w >= 1 && (!f.seasons || f.seasons.includes(w.season?.id)) && (!f.night || night) && (!f.weather || f.weather.includes(w.weather))).map((f) => f.id);
+  }
+  /** Every lasting bonus earned so far and where it came from. */
+  bonusesHTML() {
+    const s = this.s, rows = [];
+    for (const r of BUNDLE_ROOMS) if (s.bundles.done[`room:${r.id}`]) rows.push([r.name, r.perkText]);
+    for (const v of VILLAGERS) if ((s.friends[v.id] || 0) >= HEARTS[HEARTS.length - 1]) rows.push([`${v.name} (best friends)`, v.perkText]);
+    for (const p of PROJECTS) if (s.village.done[p.id]) rows.push([p.name, p.text]);
+    for (const wg of museumWings(s)) if (wg.done) rows.push([`Museum: ${wg.name}`, wg.perkText]);
+    for (const id in s.perks) if (PERKS[id]) rows.push([PERKS[id].name, PERKS[id].desc]);
+    return `<h3>${img('star')} Lasting bonuses</h3>` + (rows.length
+      ? `<div class="list">${rows.map(([a, b]) => `<div class="urow"><div class="ui"><div class="un">${esc(a)}</div><div class="ud">${esc(b)}</div></div>${img('check')}</div>`).join('')}</div>`
+      : '<p class="hint">Finish bundle shelves, become best friends with neighbours, restore the village, fill museum wings or buy the merchant’s rare wares to earn bonuses that last for good.</p>');
   }
 
   sheet_menu() {
     const s = this.s, w = this.w;
     const tab = this.tab.menu;
     let html = '';
-    if (tab === 'farm') {
+    if (tab === 'pals') html += this.palsHTML();
+    else if (tab === 'farm') {
       const u = Cloud.user();
       html += `<h3>${img('cloud')} Account & cloud save</h3>`;
       if (u) {
@@ -780,8 +874,78 @@ export class UI {
         <p><b>Long-term:</b> the Journal tracks goals, tiered achievements (some unlock hats for your farmhands) and a collection book of every good on the farm.</p>
         <p><b>Install on your phone:</b> on iPhone open this page in Safari, tap Share, then "Add to Home Screen". On Android tap the menu, then "Install app".</p></div>`;
     }
-    return { title: `${img('menu', 'pi big')} Menu`, tabs: this.tabs('menu', [['farm', 'Farm'], ['help', 'How to play']]), html };
+    return { title: `${img('menu', 'pi big')} Menu`, tabs: this.tabs('menu', [['farm', 'Farm'], ['pals', 'Friends'], ['help', 'How to play']]), html };
   }
+  // ---------- real friends: share your farm, visit theirs, send gifts ----------
+  palsHTML() {
+    const s = this.s, p = this.pals;
+    if (!Cloud.user()) return '<p class="hint">Sign in (Menu → Farm) to share your farm with friends, visit theirs and send each other a gift basket every day.</p>';
+    if (!p) { this.loadPals(); return '<p class="hint">Loading…</p>'; }
+    if (p.notSetUp) return '<p class="hint">Friends aren’t switched on for this game yet. (Whoever runs the game needs to set up the friends tables once.)</p>';
+    let html = '<p class="hint">Share your farm to get a code, then swap codes with friends. Visiting is look-only: nothing you do there changes anyone’s farm. You can send each friend one gift basket a day.</p>';
+    html += `<h3>${img('user')} Your farm</h3>`;
+    if (s.share) html += `<div class="row"><span>Your code: <b class="code">${esc(s.share.code)}</b></span><button class="btn small" data-act="unshare">Stop sharing</button></div>`;
+    html += `<div class="row"><input id="share-name" maxlength="24" placeholder="Name friends will see" value="${esc(s.share?.name || this.lastShareName || '')}"><button class="btn small green" data-act="sharefarm">${s.share ? 'Save name' : 'Share my farm'}</button></div>`;
+    html += `<h3>${img('people')} Friends</h3><div class="row"><input id="pal-code" maxlength="8" placeholder="Friend’s code" autocomplete="off" autocapitalize="characters"><button class="btn small green" data-act="addpal">Add friend</button></div>`;
+    const pals = s.pals || [];
+    if (!pals.length) html += '<p class="empty">No friends added yet.</p>';
+    html += '<div class="list">' + pals.map((f) => {
+      const sent = p.sent.includes(f.code);
+      return `<div class="urow"><div class="ui"><div class="un">${esc(f.name)}</div><div class="ud">Code ${esc(f.code)}</div></div>
+        <span><button class="btn small" data-act="visitpal" data-code="${f.code}">${img('eye')} Visit</button> <button class="btn small gold" data-act="giftpal" data-code="${f.code}" ${sent ? 'disabled' : ''}>${sent ? 'Gift sent' : `${img('heart')} Gift`}</button> <button class="btn small" data-act="removepal" data-code="${f.code}">${img('x')}</button></span></div>`;
+    }).join('') + '</div>';
+    if (!s.share) html += '<p class="hint">Friends can only send you gifts once you share your farm.</p>';
+    return html;
+  }
+  async loadPals() {
+    if (this.palsLoading) return;
+    this.palsLoading = true;
+    try {
+      const mine = await Cloud.myShare();
+      if (mine) this.s.share = { code: mine.code, name: mine.name }; else delete this.s.share;
+      this.pals = { sent: await Cloud.giftsSentToday(today()) };
+    } catch (e) { this.pals = e instanceof Cloud.NotSetUp ? { notSetUp: true } : { sent: [], error: e.message }; }
+    this.palsLoading = false;
+    if (this.sheet === 'menu') this.renderSheet();
+  }
+  async palAct(a, d) {
+    const s = this.s;
+    try {
+      if (a === 'sharefarm') {
+        this.wasShared = !!s.share;
+        const name = ($('#share-name')?.value || '').trim().slice(0, 24);
+        if (!name) { this.toast('Pick a name for your farm first', 'bad'); return; }
+        this.lastShareName = name;
+        const row = await Cloud.share(name, farmSnapshot(s));
+        s.share = { code: row.code, name: row.name };
+        this.toast(s.share && this.wasShared ? 'Name saved' : `Shared! Your farm code is ${row.code}`, 'good');
+      } else if (a === 'unshare') {
+        await Cloud.unshare(); delete s.share; this.toast('Your farm is no longer shared');
+      } else if (a === 'addpal') {
+        const code = Cloud.cleanCode($('#pal-code')?.value);
+        if (code.length !== 6) { this.toast('Codes are 6 letters and numbers', 'bad'); return; }
+        if (code === s.share?.code) { this.toast('That’s your own code!', 'bad'); return; }
+        if ((s.pals || []).some((f) => f.code === code)) { this.toast('Already on your list'); return; }
+        const row = await Cloud.fetchFarm(code, false);
+        if (!row) { this.toast('No shared farm has that code', 'bad'); return; }
+        (s.pals ||= []).push({ code, name: row.name });
+        this.toast(`${row.name} added!`, 'good');
+      } else if (a === 'removepal') {
+        s.pals = (s.pals || []).filter((f) => f.code !== d.code);
+      } else if (a === 'visitpal') {
+        this.openSheet(null);
+        await this.g.visit(d.code);
+        return;
+      } else if (a === 'giftpal') {
+        const ok = await Cloud.sendGift(d.code, s.share?.name || 'A friend', today());
+        this.pals?.sent.push(d.code);
+        this.toast(ok ? 'Gift basket sent!' : 'You already sent them one today', ok ? 'good' : '');
+      }
+      this.g.dirty();
+    } catch (e) { this.toast(e instanceof Cloud.NotSetUp ? e.message : e.message || 'Something went wrong', 'bad'); }
+    if (this.sheet === 'menu') this.renderSheet(); else this.renderScenebar();
+  }
+
   syncText() {
     const st = Cloud.status;
     const when = st.last ? new Date(st.last).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'not yet';
@@ -915,7 +1079,7 @@ export class UI {
       const cr = CROPS[o.crop];
       const status = () => {
         let t;
-        if (o.st === 'empty') t = !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again`
+        if (o.st === 'empty') t = !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) && !w.sheltered.has(o.y * MAP.w + o.x) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again (or build a Greenhouse nearby)`
           : !E.canAffordSeeds(w, o.crop) ? `Needs ${fmt(cr.seed)} coins for seeds` : 'Waiting for a farmer to plant';
         else if (o.st === 'ripe') t = '✨ Ripe! A farmer will harvest it soon';
         else t = `Growing ${Math.floor(o.p * 100)}% · ${fmtTime(((1 - o.p) * cr.time) / (w.fx.grow * (o.wet ? w.fx.water : 1)))} left${o.wet ? ' · watered' : ''}`;
@@ -980,16 +1144,22 @@ export class UI {
       const info = () => ({ st: o.off ? 'Switched off: the animals rest and don’t eat' : o.feed > 0 ? (o.out >= animalCap(o) ? `Full: waiting for a rancher` : `Happy and producing`) : `Hungry: needs ${ITEMS[A.feed].name.toLowerCase()} from storage`,
         feed: `${itemImg(A.feed)} ${o.feed}/${feedCap(o)}`, out: `${itemImg(A.item)} ${o.out}/${animalCap(o)}` });
       const v = info();
-      return { ...base, sub: `${animalCount(o)} ${A.kind}s · 1 ${ITEMS[A.item].name.toLowerCase()} each ${fmtTime(A.time / (animalCount(o) * w.fx.animal))}`,
+      const joy = () => `<span class="joy"><i style="width:${Math.round(o.joy ?? 30)}%"></i></span> ${Math.round(o.joy ?? 30)}%`;
+      const tr = ANIMAL_TREASURE[o.type];
+      const patBtn = () => E.patReady(o) ? `<button class="btn small gold" data-act="patanimals">${img('heart')} Give them a pat</button>` : `<small>Patted: try again in ${fmtTime(PAT_EVERY - (Date.now() - o.patT) / 1000)}</small>`;
+      return { ...base, sub: `${animalCount(o)} ${A.kind}s · 1 ${ITEMS[A.item].name.toLowerCase()} each ${fmtTime(A.time / (animalCount(o) * w.fx.animal * (1 + 0.25 * (o.joy ?? 30) / 100)))}`,
         body: `${power}<div class="status" data-live="st">${v.st}</div><div class="io"><span>Feed: <b data-live="feed">${v.feed}</b></span><span>Ready: <b data-live="out">${v.out}</b></span></div>
-        <p class="hint">${esc(d.desc)} Upgrading adds an animal.</p>${usesHTML(A.item)}${this.workTip('animal')}`, live: info };
+        <div class="row"><span>${img('heart')} Happiness <b data-live="joy">${joy()}</b></span><span data-live="pat">${patBtn()}</span></div>
+        <p class="hint">Fed animals grow happier, and a pat now and then makes their day. Happy animals produce up to 25% faster${tr ? ` and sometimes give a ${ITEMS[tr].name}` : ''}. ${esc(d.desc)} Upgrading adds an animal.</p>${usesHTML(A.item)}${this.workTip('animal')}`,
+        live: () => ({ ...info(), joy: joy(), pat: patBtn() }) };
     }
     if (d.hive) {
       const it = d.hive.item;
       const info = () => ({ out: `${itemImg(it)} ${o.out}/${hiveCap(o)}` });
       const near = o.type === 'beehive' ? `${o._flowers || 0} flowers nearby · ` : '';
+      const biting = it === 'fish' ? `<h3>Biting right now</h3><div class="oi">${this.bitingNow().map((k) => `<span class="need">${infoImg(k)} ${ITEMS[k].name}</span>`).join('')}</div><p class="hint">Some catches are special fish, which go straight to storage. Which ones bite depends on the season, the weather and the time of day. The rarest turn up only once in a long while.</p>` : '';
       return { ...base, sub: `${near}1 ${ITEMS[it].name.toLowerCase()} every ${fmtTime(d.hive.time / (hiveRate(o) * w.fx.animal))}`,
-        body: `${power}<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>${usesHTML(it)}${this.workTip('hive')}`, live: info };
+        body: `${power}<div class="io"><span>${ITEMS[it].name}: <b data-live="out">${info().out}</b></span></div><p class="hint">${esc(d.desc)}</p>${biting}${usesHTML(it)}${this.workTip('hive')}`, live: info };
     }
     if (d.store) {
       return { ...base, sub: `Holds ${storeCap(o)} items`, body: `<div class="io"><span>${img('box')} Farm storage: <b data-live="u">${fmt(w.used())}/${fmt(w.capacity)}</b></span></div><p class="hint">${esc(d.desc)}</p>${this.workTip('storage')}`,
@@ -1217,6 +1387,14 @@ export class UI {
   }
   renderScenebar() {
     const el = $('#scenebar');
+    const v = this.g.visitInfo;
+    if (v) {
+      const sent = this.pals?.sent.includes(v.code);
+      el.innerHTML = `${img('eye', 'pi big')}<div class="pt"><b>Visiting ${esc(v.name)}</b><small>Farm level ${v.level} · look around, nothing here changes</small></div>
+        <button class="btn small gold" data-act="giftpal" data-code="${v.code}" ${sent ? 'disabled' : ''}>${sent ? 'Gift sent' : `${img('heart')} Gift`}</button><button class="btn small green" data-act="leavevisit">Back home</button>`;
+      el.classList.add('open');
+      return;
+    }
     if (!this.inQuarry()) { el.classList.remove('open'); el.innerHTML = ''; return; }
     const miners = this.s.workers.filter((x) => x.role === 'miner').length;
     el.innerHTML = `${img('pick', 'pi big')}<div class="pt"><b>The Quarry</b><small data-live="qs">${this.quarryStatus(miners)}</small></div>
@@ -1240,6 +1418,7 @@ export class UI {
   }
 
   tap(sx, sy) {
+    if (this.g.visitWorld) { this.toast('You’re visiting. Tap “Back home” to get back to your farm.'); return; }
     if (this.inQuarry()) { this.tapQuarry(sx, sy); return; }
     const m = this.mode, w = this.w;
     if (m) {
@@ -1364,6 +1543,11 @@ export class UI {
     else if (e.t === 'gem') this.toast('A miner found a gemstone!', 'good');
     else if (e.t === 'heart') { const v = VILLAGERS.find((x) => x.id === e.who), g = e.gift; this.toast(`${v.name}: ${e.h} heart${e.h > 1 ? 's' : ''}! ${g.coins ? `+${fmt(g.coins)} coins` : g.ribbons ? `+${g.ribbons} ribbons` : g.hat ? `New hat: ${HATS[g.hat].name}` : v.perkText}`, 'good'); }
     else if (e.t === 'project') this.toast(`${PROJECTS.find((p) => p.id === e.id).name} restored! ${PROJECTS.find((p) => p.id === e.id).text}`, 'good');
+    else if (e.t === 'treasure') this.toast(`Your happy animals left you a ${ITEMS[e.item].name}!`, 'good');
+    else if (e.t === 'catch') { const rare = ['koi', 'sturgeon'].includes(e.item); if (rare || !this.s.museum[e.item] && !(this.s.stats.harvest[e.item] > 1)) this.toast(`The dock landed a ${ITEMS[e.item].name}!${rare ? ' What a rare catch!' : ''}`, 'good'); }
+    else if (e.t === 'find') this.toast(`A miner dug up a ${ITEMS[e.item].name}! (Museum)`, 'good');
+    else if (e.t === 'wing') { const wg = MUSEUM_WINGS.find((x) => x.id === e.id); this.toast(`Museum: ${wg.name} complete! ${wg.perkText}`, 'good'); }
+    else if (e.t === 'museum') this.toast(`The whole museum is full! +${fmt(MUSEUM_REWARD.coins)} coins`, 'good');
     else if (e.t === 'giantgrew') this.toast(`A giant ${ITEMS[e.crop].name.toLowerCase()} grew on your farm!`, 'good');
     else if (e.t === 'giant') { if (!this.inQuarry()) R.float(e.x + 1, e.y, 'GIANT!', e.crop); }
     else if (e.t === 'debris') { if (!this.debrisTold) { this.debrisTold = true; this.toast(`A ${DEFS[e.type].name.toLowerCase()} turned up on your land. Farmhands will clear it for materials.`); } }

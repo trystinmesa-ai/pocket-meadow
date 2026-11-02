@@ -103,3 +103,12 @@ export async function catchUp(world, ms, onProgress) {
     mats: diff(before.mats, after.mats), built: Math.max(0, before.sites - after.sites),
   };
 }
+
+/** What friends get to see: the farm's layout, farmhands and pets, not its storage or settings. */
+export function farmSnapshot(s) {
+  const keep = ['v', 'seed', 'level', 'map', 'objects', 'workers', 'pets', 'created', 'museum', 'village', 'quarry', 'shed'];
+  const out = {};
+  for (const k of keep) out[k] = s[k];
+  return JSON.parse(serialize(out));
+}
+
