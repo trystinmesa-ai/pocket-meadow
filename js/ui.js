@@ -23,6 +23,7 @@ import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD
 import { farmPerks, museumWings } from './world.js';
 import { merchantHere, nextVisit, stockOf, offerName, soldOut } from './merchant.js';
 import { debrisSprite } from './art/quarry.js';
+import { hasInterior } from './art/interiors.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -164,7 +165,11 @@ export class UI {
     // while visiting, anything else takes you back home first
     if (this.g.visitWorld && !['close', 'zoom', 'modalbtn', 'collect', 'weatherinfo', 'levelinfo', 'charminfo', 'tab'].includes(a)) this.g.leaveVisit();
     // building and buying land happen on the farm
-    if (this.inQuarry() && (a === 'landmode' || a === 'pick' || a === 'removemode' || (a === 'sheet' && d.v === 'build'))) this.goFarm();
+    if (this.inScene() && (a === 'landmode' || a === 'pick' || a === 'removemode' || a === 'move' || (a === 'sheet' && d.v === 'build'))) {
+      const keep = this.sel;
+      this.goFarm();
+      if (a === 'move') this.sel = keep; // moving needs the building it was about
+    }
     switch (a) {
       case 'sheet': this.openSheet(this.sheet === d.v ? null : d.v); break;
       case 'close': this.openSheet(null); break;
@@ -204,6 +209,10 @@ export class UI {
       // materials & quarry
       case 'cleardebris': { const o = this.sel, g = DEFS[o.type].gives; if (fail(E.remove(w, o))) { this.toast(`Cleared! +${E.matsText(g)}`, 'good'); this.select(null); this.g.dirty(); } break; }
       case 'goquarry': this.goQuarry(); break;
+      case 'insideinfo': { const io = this.insideObj(); if (io) this.select(this.sel === io ? null : io); break; }
+      case 'goinside': { const o = this.sel; this.select(null, true); if (o) this.goInside(o); break; }
+      case 'setbed': { const b = this.sel; if (fail(E.setBedCrop(w, b.g, b.bed, d.crop))) { this.g.dirty(); this.renderCard(); } break; }
+      case 'allbeds': { const b = this.sel, bed = b.g.beds[b.bed], c = bed.next || bed.crop; if (c && fail(E.setAllBeds(w, b.g, c))) { this.toast(`Every bed will grow ${ITEMS[c].name}`, 'good'); this.g.dirty(); this.renderCard(); } break; }
       case 'openmerchant': this.tab.orders = 'merchant'; this.openSheet('orders'); break;
       case 'giveproject': if (fail(E.giveProject(w, d.id))) { this.g.dirty(); this.renderSheet(); } break;
       case 'payproject': if (fail(E.giveProject(w, d.id, true))) { this.coinPop(el); this.g.dirty(); this.renderSheet(); } break;
@@ -303,6 +312,11 @@ export class UI {
     if (mb.hidden !== !mv) mb.hidden = !mv;
     if (mv && this.merchantK !== mv.k) { if (this.merchantK !== undefined || Date.now() - mv.start < 60000) this.toast('The travelling merchant has arrived! Tap the cart up top to see their wares.', 'good'); this.merchantK = mv.k; }
     this.renderGoal();
+    if (this.inInside()) {
+      const io = this.insideObj();
+      if (!io) this.goFarm();
+      else { const q = $('#scenebar [data-live="is"]'), v = esc(this.insideStatus(io)); if (q && q._v !== v) { q.innerHTML = v; q._v = v; } }
+    }
     if (this.inQuarry()) { const q = $('#scenebar [data-live="qs"]'), v = this.quarryStatus(s.workers.filter((x) => x.role === 'miner').length); if (q && q._v !== v) { q.innerHTML = v; q._v = v; } }
     if (this.sheet) this.liveSheet();
     if (this.sel) this.liveCard();
@@ -871,6 +885,7 @@ export class UI {
         <p><b>Tips:</b> paths make farmhands faster. Put storage crates near far-off fields. Wells and sprinklers make crops grow faster. Rain waters everything for free. Flowers near beehives make more honey. Expand out to the stream or pond and build a Fishing Dock to catch fish.</p>
         <p><b>Materials:</b> buildings need wood and stone, and better ones need copper, iron and gold ore. Farmhands clear fallen branches and rocks on your land for a little. For lots more, buy land at the edge of the map, follow the trail sign to the quarry and hire Miners. New buildings take a while to go up, and idle farmhands help.</p>
         <p><b>The village:</b> neighbours post orders on the notice board. Fill them to make friends (each heart brings a gift). Restore the village buildings for lasting bonuses; fixing the old bridge brings a travelling merchant every couple of days.</p>
+        <p><b>Inside buildings:</b> tap a building to step inside. Tap <b>Info</b> at the bottom for its usual card (recipes, pantry, upgrades), and <b>Back to farm</b> to leave. Greenhouses have their own beds inside that grow any crop in any season.</p>
         <p><b>Long-term:</b> the Journal tracks goals, tiered achievements (some unlock hats for your farmhands) and a collection book of every good on the farm.</p>
         <p><b>Install on your phone:</b> on iPhone open this page in Safari, tap Share, then "Add to Home Screen". On Android tap the menu, then "Install app".</p></div>`;
     }
@@ -995,7 +1010,7 @@ export class UI {
     const el = $('#card');
     const o = this.sel;
     if (!o || !this.exists(o)) { el.classList.remove('open'); this.sel = null; this.g.R.overlay = this.overlay(); return; }
-    const c = o.role ? this.workerCard(o) : o.kind && PETS[o.kind] ? this.petCard(o) : this.objCard(o);
+    const c = o.role ? this.workerCard(o) : o.kind && PETS[o.kind] ? this.petCard(o) : o.bed !== undefined ? this.bedCard(o) : this.objCard(o);
     el.innerHTML = `<div class="ch">${c.icon}<div class="ct"><h2>${c.title}</h2><div class="cs">${c.sub || ''}</div></div><button class="x" data-act="deselect" aria-label="Close">${img('x')}</button></div>
       <div class="cb">${c.body || ''}</div>${c.btns ? `<div class="cbtn">${c.btns}</div>` : ''}`;
     el.classList.add('open');
@@ -1016,6 +1031,28 @@ export class UI {
   }
 
   exists(o) { return o.role ? this.s.workers.includes(o) : o.kind && PETS[o.kind] ? this.s.pets.includes(o) : this.w.byId.has(o.id); }
+
+  /** One bed inside a greenhouse: pick its seed like a field plot (any season works here). */
+  bedCard(sel) {
+    const w = this.w, s = this.s, b = sel.g.beds[sel.bed];
+    if (!b) return { icon: '', title: 'Bed', body: '' };
+    const cr = b.crop && CROPS[b.crop];
+    const status = () => {
+      if (!b.crop) return 'Empty: pick a seed below';
+      if (b.st === 'empty') return !cropUnlocked(s, b.crop) ? 'Seed locked' : !E.canAffordSeeds(w, b.crop) ? `Needs ${fmt(cr.seed)} coins for seeds` : 'Waiting for a farmer to plant';
+      const t = b.st === 'ripe' ? '✨ Ripe! A farmer will harvest it soon' : `Growing ${Math.floor(b.p * 100)}% · ${fmtTime(((1 - b.p) * cr.time) / (w.fx.grow * w.fx.water))} left · always watered`;
+      return b.next ? `${t}<small class="next">Then ${itemImg(b.next)} ${ITEMS[b.next].name}</small>` : t;
+    };
+    const crops = CROP_ORDER.filter((c) => s.level >= CROPS[c].level && s.seeds[c]).map((c) => `<button class="chip ${b.crop === c ? 'on' : ''} ${b.next === c ? 'queued' : ''}" data-act="setbed" data-crop="${c}" title="${ITEMS[c].name} · seeds ${CROPS[c].seed}">${itemImg(c)}<small>${fmtShort(CROPS[c].seed)}</small></button>`).join('');
+    return {
+      icon: b.crop ? itemImg(b.crop, 'pi big') : `<img class="thumb" src="${thumb('plot')}" alt="">`,
+      title: b.crop ? `${ITEMS[b.crop].name} bed` : 'Greenhouse bed', sub: `Bed ${sel.bed + 1} of ${sel.g.beds.length} · any crop, any season`,
+      body: `<div class="status" data-live="st">${status()}</div><div class="bar" data-live="pb"><i style="width:${b.p * 100}%"></i></div>
+        <div class="chips">${crops}</div><p class="hint">Seasonal crops grow here all year. Farmers plant, tend and harvest these beds like any field. Unlock more seeds in Build → Fields.</p>`,
+      btns: b.crop || b.next ? `<button class="btn small" data-act="allbeds">Same seed in every bed</button>` : '',
+      live: () => ({ st: status(), pb: `<i style="width:${b.p * 100}%"></i>` }),
+    };
+  }
 
   petCard(p) {
     return {
@@ -1060,7 +1097,8 @@ export class UI {
       : `<button class="btn small green" data-act="upgradeb" ${needAttr(E.bUpgradeCost(o), um)}>${img('up')} Upgrade ${coin(E.bUpgradeCost(o))}${um ? `<span class="bmats">${matsHTML(um, w)}</span>` : ''}</button>`) : '';
     const lvl = o.lvl ? ` <span class="lv">Lv ${o.lvl}${d.maxLvl ? `/${d.maxLvl}` : ''}</span>` : '';
     const power = `<div class="row power ${o.off ? 'off' : ''}"><span><b>${o.off ? 'Switched off' : 'Working'}</b></span><button class="btn small ${o.off ? 'green' : ''}" data-act="toggleoff">${o.off ? 'Turn on' : 'Turn off'}</button></div>`;
-    const base = { icon: `<img class="thumb" src="${thumb(o.type, o.crop)}" alt="">`, title: d.name + lvl, btns: upBtn + moveBtn + rmBtn };
+    const inBtn = '';
+    const base = { icon: `<img class="thumb" src="${thumb(o.type, o.crop)}" alt="">`, title: d.name + lvl, btns: inBtn + upBtn + moveBtn + rmBtn };
     if (o.build > 0) {
       const info = () => ({ st: `Going up: ${fmtTime(o.build)} left${o._cb ? ' · a farmhand is helping' : ''}`, pb: `<i style="width:${(1 - o.build / (o.buildT || o.build)) * 100}%"></i>` });
       const v = info();
@@ -1079,7 +1117,7 @@ export class UI {
       const cr = CROPS[o.crop];
       const status = () => {
         let t;
-        if (o.st === 'empty') t = !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) && !w.sheltered.has(o.y * MAP.w + o.x) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again (or build a Greenhouse nearby)`
+        if (o.st === 'empty') t = !cropUnlocked(s, o.crop) ? 'Seed locked' : !canPlantNow(o.crop, seasonAt(Date.now())) ? `Waiting for ${SEASONS.find((x) => x.id === cr.season).name} to plant again (a Greenhouse grows it any time)`
           : !E.canAffordSeeds(w, o.crop) ? `Needs ${fmt(cr.seed)} coins for seeds` : 'Waiting for a farmer to plant';
         else if (o.st === 'ripe') t = '✨ Ripe! A farmer will harvest it soon';
         else t = `Growing ${Math.floor(o.p * 100)}% · ${fmtTime(((1 - o.p) * cr.time) / (w.fx.grow * (o.wet ? w.fx.water : 1)))} left${o.wet ? ' · watered' : ''}`;
@@ -1163,9 +1201,13 @@ export class UI {
     }
     if (d.store) {
       return { ...base, sub: `Holds ${storeCap(o)} items`, body: `<div class="io"><span>${img('box')} Farm storage: <b data-live="u">${fmt(w.used())}/${fmt(w.capacity)}</b></span></div><p class="hint">${esc(d.desc)}</p>${this.workTip('storage')}`,
-        btns: upBtn + `<button class="btn small" data-act="open" data-v="market">Open market</button>` + moveBtn + rmBtn, live: () => ({ u: `${fmt(w.used())}/${fmt(w.capacity)}` }) };
+        btns: inBtn + upBtn + `<button class="btn small" data-act="open" data-v="inventory">Inventory</button>` + moveBtn + rmBtn, live: () => ({ u: `${fmt(w.used())}/${fmt(w.capacity)}` }) };
     }
-    if (d.houses) return { ...base, sub: `Home for ${d.houses} farmhands`, body: `<p class="hint">${s.workers.length}/${w.housing} beds in use across your farm.</p>`, btns: `<button class="btn small" data-act="open" data-v="workers">Farmhands</button>` + moveBtn + rmBtn };
+    if (d.beds) {
+      const info = () => { const r = o.beds.filter((b) => b.st === 'ripe').length, g = o.beds.filter((b) => b.st === 'grow').length, e = o.beds.filter((b) => !b.crop).length; return `${g} growing · ${r} ripe${e ? ` · ${e} without a seed yet` : ''}`; };
+      return { ...base, sub: `${o.beds.length} beds inside · any crop, any season`, body: `<div class="status" data-live="st">${info()}</div><p class="hint">${esc(d.desc)}</p>`, live: () => ({ st: info() }) };
+    }
+    if (d.houses) return { ...base, sub: `Home for ${d.houses} farmhands`, body: `<p class="hint">${s.workers.length}/${w.housing} beds in use across your farm.</p>`, btns: inBtn + `<button class="btn small" data-act="open" data-v="workers">Farmhands</button>` + moveBtn + rmBtn };
     if (o.type === 'market') return { ...base, sub: d.desc, btns: `<button class="btn small gold" data-act="open" data-v="market">Open market</button>` + moveBtn };
     if (o.type === 'board') return { ...base, sub: d.desc, btns: `<button class="btn small gold" data-act="open" data-v="orders">See orders</button>` + moveBtn };
     const extra = [d.speed && `Farmhands walk ${Math.round((d.speed - 1) * 100)}% faster here.`, d.charm && `Adds ${d.charm} charm. Charm makes everything sell for a little more.`,
@@ -1309,7 +1351,7 @@ export class UI {
   }
   overlay() {
     const m = this.mode;
-    const ov = { sel: this.sel };
+    const ov = { sel: this.sel, bed: this.sel?.bed };
     if (!m) return ov;
     ov.grid = m.k !== 'land';
     if (m.k === 'place' || m.k === 'move') {
@@ -1367,6 +1409,39 @@ export class UI {
 
   // ---------- the quarry scene ----------
   inQuarry() { return this.g.R.scene === 'quarry'; }
+  inInside() { return this.g.R.scene === 'inside'; }
+  inScene() { return this.g.R.scene !== 'farm'; }
+  /** Step inside a building: its own little room, with the usual card one tap away. */
+  goInside(o) {
+    if (!hasInterior(o.type) || o.build > 0) { this.select(o); return; }
+    if (this.mode) this.setMode(null);
+    if (this.sel) this.select(null, true);
+    if (this.sheet) this.openSheet(null);
+    document.body.classList.remove('inquarry');
+    this.g.R.insideId = o.id;
+    this.g.R.setScene('inside');
+    document.body.classList.add('inside');
+    this.renderScenebar();
+  }
+  insideObj() { return this.inInside() ? this.w.byId.get(this.g.R.insideId) : null; }
+  insideStatus(o) {
+    const d = DEFS[o.type];
+    if (d.recipes) return o.off ? 'Switched off' : o._busy ? `Making ${ITEMS[o.batch]?.name || 'something'}…` : 'Waiting for work';
+    if (d.animal) return `${animalCount(o)} ${d.animal.kind}s · happiness ${Math.round(o.joy ?? 30)}%`;
+    if (d.beds) { const r = o.beds.filter((b) => b.st === 'ripe').length, g = o.beds.filter((b) => b.st === 'grow').length; return `${o.beds.length} beds · ${g} growing · ${r} ripe`; }
+    if (d.houses) return `Sleeps ${d.houses} farmhands`;
+    if (d.store) return `${fmt(this.w.used())}/${fmt(this.w.capacity)} stored on the farm`;
+    if (d.hive) return `${o.out}/${hiveCap(o)} ${ITEMS[d.hive.item].name.toLowerCase()} waiting`;
+    return d.desc || '';
+  }
+  tapInside(sx, sy) {
+    const o = this.insideObj(), hit = this.g.R.pick(sx, sy);
+    if (!o) { this.goFarm(); return; }
+    if (!hit) { if (this.sel) this.select(null); return; }
+    if (hit.role) { this.select(hit === this.sel ? null : hit); return; }
+    if (hit.bed !== undefined) { this.select({ id: o.id, g: o, bed: hit.bed }); return; }
+    if (hit.animal) { const why = E.patAnimals(this.w, o); this.toast(why || 'They love the attention!', why ? '' : 'good'); if (!why) this.g.dirty(); }
+  }
   goQuarry() {
     if (!this.s.quarry) {
       const why = E.discoverQuarry(this.w);
@@ -1379,10 +1454,10 @@ export class UI {
     this.renderScenebar();
   }
   goFarm() {
-    if (!this.inQuarry()) return;
+    if (!this.inScene()) return;
     if (this.sel) this.select(null, true);
     this.g.R.setScene('farm');
-    document.body.classList.remove('inquarry');
+    document.body.classList.remove('inquarry', 'inside');
     this.renderScenebar();
   }
   renderScenebar() {
@@ -1392,6 +1467,13 @@ export class UI {
       const sent = this.pals?.sent.includes(v.code);
       el.innerHTML = `${img('eye', 'pi big')}<div class="pt"><b>Visiting ${esc(v.name)}</b><small>Farm level ${v.level} · look around, nothing here changes</small></div>
         <button class="btn small gold" data-act="giftpal" data-code="${v.code}" ${sent ? 'disabled' : ''}>${sent ? 'Gift sent' : `${img('heart')} Gift`}</button><button class="btn small green" data-act="leavevisit">Back home</button>`;
+      el.classList.add('open');
+      return;
+    }
+    const io = this.insideObj();
+    if (io) {
+      el.innerHTML = `<img class="thumb xs" src="${thumb(io.type)}" alt=""><div class="pt"><b>${DEFS[io.type].name}${io.lvl ? ` <span class="lv">Lv ${io.lvl}</span>` : ''}</b><small data-live="is">${esc(this.insideStatus(io))}</small></div>
+        <button class="btn small" data-act="insideinfo">${img('book')} Info</button><button class="btn small green" data-act="gofarm">Back to farm</button>`;
       el.classList.add('open');
       return;
     }
@@ -1418,6 +1500,7 @@ export class UI {
   }
 
   tap(sx, sy) {
+    if (this.inInside()) { this.tapInside(sx, sy); return; }
     if (this.g.visitWorld) { this.toast('You’re visiting. Tap “Back home” to get back to your farm.'); return; }
     if (this.inQuarry()) { this.tapQuarry(sx, sy); return; }
     const m = this.mode, w = this.w;
@@ -1445,6 +1528,8 @@ export class UI {
     }
     const hit = this.pickAt(sx, sy);
     if (hit && hit.trail) { this.goQuarry(); return; }
+    // buildings with a room always open into it; their card is one tap away inside
+    if (hit && !hit.role && hit.type && hasInterior(hit.type) && !(hit.build > 0)) { this.goInside(hit); return; }
     if (hit && !hit.role && hit.type === 'market') { this.select(null, true); this.openSheet('market'); return; }
     if (hit && !hit.role && hit.type === 'board') { this.select(null, true); this.openSheet('orders'); return; }
     if (this.sheet && !hit) { this.openSheet(null); return; }
@@ -1530,12 +1615,13 @@ export class UI {
     if (this.mode) this.setMode(null);
     else if (this.sheet) this.openSheet(null);
     else if (this.sel) this.select(null);
+    else if (this.inScene()) this.goFarm();
   }
 
   // ---------- events from the simulation ----------
   handle(e) {
     const R = this.g.R;
-    if (e.t === 'float') { if (!this.inQuarry()) R.float(e.x, e.y, e.text, e.item); }
+    if (e.t === 'float') { if (!this.inScene()) R.float(e.x, e.y, e.text, e.item); }
     else if (e.t === 'qhit') { if (this.inQuarry()) R.float(e.n.x, e.n.y - 1, '+1', e.item); }
     else if (e.t === 'built') this.toast(`The ${DEFS[e.o.type].name} is finished!`, 'good');
     else if (e.t === 'quarry') this.toast('You found the quarry! Hire a miner to dig for wood, stone and ore.', 'good');
@@ -1549,7 +1635,7 @@ export class UI {
     else if (e.t === 'wing') { const wg = MUSEUM_WINGS.find((x) => x.id === e.id); this.toast(`Museum: ${wg.name} complete! ${wg.perkText}`, 'good'); }
     else if (e.t === 'museum') this.toast(`The whole museum is full! +${fmt(MUSEUM_REWARD.coins)} coins`, 'good');
     else if (e.t === 'giantgrew') this.toast(`A giant ${ITEMS[e.crop].name.toLowerCase()} grew on your farm!`, 'good');
-    else if (e.t === 'giant') { if (!this.inQuarry()) R.float(e.x + 1, e.y, 'GIANT!', e.crop); }
+    else if (e.t === 'giant') { if (!this.inScene()) R.float(e.x + 1, e.y, 'GIANT!', e.crop); }
     else if (e.t === 'debris') { if (!this.debrisTold) { this.debrisTold = true; this.toast(`A ${DEFS[e.type].name.toLowerCase()} turned up on your land. Farmhands will clear it for materials.`); } }
     else if (e.t === 'splash') R.splash(e.x, e.y);
     else if (e.t === 'level') this.levelUp(e.level, e.reward);

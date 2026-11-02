@@ -20,6 +20,8 @@ import { gradeCanvas, gradeHex } from './art/grade.js';
 import { nodeSprite, debrisSprite, cartSprite, signSprite, lockSprite, quarryGround } from './art/quarry.js';
 import { QUARRY, QZONES, QNODES } from './data.js';
 import { trailParcels } from './economy.js';
+import { roomCanvas, roomSpec, RW, RH, ROOM, WALL_H } from './art/interiors.js';
+import { ITEMS } from './data.js';
 
 const BORDER = 6; // tiles of forest drawn around the map
 
@@ -75,7 +77,8 @@ export class Renderer {
   clampCam() {
     const c = this.cam, S = this.scale;
     const halfW = this.cv.width / 2 / S, halfH = this.cv.height / 2 / S;
-    const q = this.scene === 'quarry', W = q ? QUARRY.w : MAP.w, H = q ? QUARRY.h : MAP.h, B = q ? 1 : BORDER * 0.6;
+    const q = this.scene === 'quarry', ins = this.scene === 'inside';
+    const W = q ? QUARRY.w : ins ? ROOM.w : MAP.w, H = q ? QUARRY.h : ins ? ROOM.h : MAP.h, B = q || ins ? 1 : BORDER * 0.6;
     const minX = -B * TILE + halfW, maxX = (W + B) * TILE - halfW;
     const minY = -B * TILE + halfH, maxY = (H + B) * TILE - halfH;
     c.x = minX > maxX ? W * TILE / 2 : Math.max(minX, Math.min(maxX, c.x));
@@ -83,9 +86,19 @@ export class Renderer {
   }
   /** Switch between the farm and the quarry, each keeping its own camera. */
   setScene(name) {
-    if (name === this.scene) return;
-    this.cams[this.scene] = { ...this.cam };
+    if (name === this.scene && name !== 'inside') return;
+    if (this.scene !== 'inside') this.cams[this.scene] = { ...this.cam };
     this.scene = name;
+    if (name === 'inside') {
+      // frame the whole room, leaving space for the bars at the top and bottom
+      const S = Math.max(1, Math.min(this.cv.width / (RW + 24), (this.cv.height - 190 * this.dpr) / (RH + 24)));
+      this.cam = { x: RW / 2, y: RH / 2 + 6, z: Math.floor(S) / this.dpr || S / this.dpr };
+      this.inside = { actors: [] };
+      this.floats.length = 0;
+      this.particles = this.particles.filter((p) => p.screen);
+      this.clampCam();
+      return;
+    }
     this.cam = this.cams[name] || (name === 'quarry' ? { x: (QUARRY.cart[0] + 4) * TILE, y: QUARRY.road * TILE, z: this.cam.z } : { x: 24 * TILE, y: 20 * TILE, z: this.cam.z });
     this.floats.length = 0;
     this.particles = this.particles.filter((p) => p.screen);
@@ -125,6 +138,7 @@ export class Renderer {
   // ---------- frame ----------
   draw(dt) {
     if (this.scene === 'quarry') return this.drawQuarry(dt);
+    if (this.scene === 'inside') return this.drawInside(dt);
     this.t += dt;
     const { ctx, world } = this;
     const s = world.state;
@@ -861,6 +875,167 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  // ---------- inside a building ----------
+  drawInside(dt) {
+    this.t += dt;
+    const { ctx, world } = this, s = world.state;
+    const o = world.byId.get(this.insideId);
+    const S = this.scale;
+    const ox = Math.round(this.cv.width / 2 - this.cam.x * S), oy = Math.round(this.cv.height / 2 - this.cam.y * S);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#2a2024';
+    ctx.fillRect(0, 0, this.cv.width, this.cv.height);
+    ctx.setTransform(S, 0, 0, S, ox, oy);
+    this.hits = [];
+    if (!o) return;
+    const spec = roomSpec(o.type), t = this.t;
+    const room = roomCanvas(o);
+    ctx.drawImage(room, 0, 0);
+    const floorTop = WALL_H + 6, list = [];
+    const add = (y, fn) => list.push([y, fn]);
+    // a crackling fire
+    if (spec.fire) {
+      const [fx, fy] = spec.fire;
+      for (let i = 0; i < 5; i++) { const h = 4 + Math.abs(Math.sin(t * 7 + i * 1.7)) * 6; ctx.fillStyle = i % 2 ? '#f4c542' : '#f0702e'; ctx.fillRect(fx - 8 + i * 3, fy - h, 3, h); }
+      if (Math.random() < 0.1) this.particles.push({ k: 'smoke', x: fx, y: fy - 12, vx: 0.5, vy: -5, life: 1.2, r: 1 });
+    }
+    // the storage shelves show what's actually in the barn
+    if (spec.shelf) {
+      const sh = spec.shelf, top = Object.entries(s.inv).sort((a, b) => b[1] - a[1]).slice(0, sh.cols * sh.rows);
+      for (let r = 0; r < sh.rows; r++) {
+        const y = sh.y + 2 + r * 22, row = top.slice(r * sh.cols, (r + 1) * sh.cols);
+        ctx.fillStyle = '#c48c56'; ctx.fillRect(sh.x, y + 11, sh.cols * 15 + 2, 3); ctx.fillStyle = '#7e502d'; ctx.fillRect(sh.x, y + 14, sh.cols * 15 + 2, 1);
+        row.forEach(([k, n], i) => { if (n > 9) ctx.drawImage(itemIcon(k), sh.x + 4 + i * 15, y - 3); ctx.drawImage(itemIcon(k), sh.x + 2 + i * 15, y); });
+        // empty spots hold the odd crate or basket so the shelves never look bare
+        for (let i = row.length; i < sh.cols; i++) {
+          const X = sh.x + 2 + i * 15, kind = (i + r * 2) % 3;
+          if (kind === 0) { ctx.fillStyle = '#ac733f'; ctx.fillRect(X, y + 2, 11, 9); ctx.fillStyle = '#7e502d'; ctx.fillRect(X, y + 6, 11, 1); ctx.fillRect(X + 5, y + 2, 1, 9); }
+          else if (kind === 1) { ctx.fillStyle = '#c9944a'; ctx.fillRect(X + 1, y + 5, 10, 6); ctx.fillStyle = '#a8743a'; for (let j = 1; j < 10; j += 2) ctx.fillRect(X + 1 + j, y + 6, 1, 4); }
+          else { ctx.fillStyle = '#d8c49a'; ctx.beginPath(); ctx.ellipse(X + 6, y + 7, 5, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#a8905e'; ctx.fillRect(X + 3, y + 4, 6, 1); }
+        }
+      }
+    }
+    // greenhouse beds: real growing crops
+    if (spec.beds) {
+      const n = o.beds.length, cols = 7, rows = Math.ceil(n / cols), x0 = (RW - cols * 26) / 2 + 2, y0 = Math.round(WALL_H + (RH - WALL_H - rows * 24) / 2) + 2;
+      o.beds.forEach((b, i) => {
+        const X = x0 + (i % cols) * 26, Y = y0 + Math.floor(i / cols) * 24;
+        add(Y + 16, () => {
+          ctx.fillStyle = '#5f3c2b'; ctx.fillRect(X - 1, Y - 1, 20, 18); ctx.fillStyle = b.st === 'empty' ? '#8e5c3c' : '#704532'; ctx.fillRect(X, Y, 18, 16);
+          ctx.fillStyle = '#a8714a'; for (let k = 2; k < 18; k += 4) ctx.fillRect(X + 1, Y + k, 16, 1);
+          if (b.crop && b.st !== 'empty') { const st = b.st === 'ripe' ? 3 : b.p < 0.15 ? 0 : b.p < 0.55 ? 1 : 2; const cs = cropSprite(b.crop, st); ctx.drawImage(cs, X + 1, Y + 16 - CROP_H); if (st === 3 && Math.random() < 0.01) this.spark(X + 9, Y); }
+          else if (b.crop) { ctx.globalAlpha = 0.55; ctx.drawImage(itemIcon(b.crop), X + 4, Y + 3); ctx.globalAlpha = 1; }
+          const sel = this.overlay?.bed === i;
+          if (sel) { ctx.strokeStyle = 'rgba(255,226,122,0.9)'; ctx.lineWidth = 1; ctx.strokeRect(X - 1.5, Y - 1.5, 21, 19); }
+          this.hits.push({ ref: { bed: i }, x0: X - 2, y0: Y - 12, x1: X + 20, y1: Y + 18 });
+        });
+      });
+    }
+    // animals wander about their house
+    if (spec.animals) {
+      const n = animalCount(o), A = this.inside.actors;
+      const yMin = floorTop + 24, yMax = RH - 10; // keep clear of the troughs along the back wall
+      while (A.length < n) A.push({ x: 30 + Math.random() * (RW - 60), y: yMin + Math.random() * (yMax - yMin), tx: 0, ty: 0, wait: Math.random() * 3, f: 0 });
+      A.length = n;
+      for (const a of A) {
+        if (a.wait > 0) { a.wait -= dt; a.f = Math.random() < 0.01 ? 2 : a.f === 2 && Math.random() < 0.05 ? 0 : a.f; if (a.wait <= 0) { a.tx = 24 + Math.random() * (RW - 60); a.ty = yMin + Math.random() * (yMax - yMin); } }
+        else {
+          const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy), v = (spec.animals === 'cow' ? 9 : 14) * dt;
+          if (d < v) { a.wait = 1.5 + Math.random() * 4; a.f = 0; } else { a.x += (dx / d) * v; a.y += (dy / d) * v; a.left = dx < 0; a.f = Math.floor(t * 6) % 2; }
+        }
+        add(a.y, () => { const cv = animalFrame(spec.animals, a.f, a.left); this.shadow(a.x, a.y - 1, cv.width / 3, 1.5); const [x, y] = this.blit(cv, a.x, a.y, 0); this.hits.push({ ref: { animal: true }, x0: x - 3, y0: y - 3, x1: x + cv.width + 3, y1: a.y + 3 }); });
+      }
+    }
+    // fish swim under the dock: the kinds you've caught
+    if (spec.fish) {
+      const kinds = ['fish', ...Object.keys(ITEMS).filter((k) => ITEMS[k].fishy && s.stats.harvest[k])];
+      for (let i = 0; i < 6; i++) {
+        const k = kinds[i % kinds.length], sp = 8 + (i * 7) % 9, dir = i % 2 ? 1 : -1;
+        const x = ((t * sp * dir + i * 53) % (RW - 30) + (RW - 30)) % (RW - 30) + 12, y = 84 + (i * 13) % 46 + Math.sin(t * 2 + i) * 2;
+        if (Math.abs(x + 5 - RW / 2) < 20) continue; // swimming under the pier
+        ctx.globalAlpha = 0.75;
+        if (dir < 0) { ctx.save(); ctx.translate(x + 10, 0); ctx.scale(-1, 1); ctx.drawImage(itemIcon(k), 0, y); ctx.restore(); } else ctx.drawImage(itemIcon(k), x, y);
+        ctx.globalAlpha = 1;
+      }
+    }
+    // the artisan at their station while the workshop is busy
+    if (spec.station) {
+      const [sx, sy] = spec.station;
+      const wk = o._busy && s.workers.find((w) => w._hidden && w.job && w.job.steps[w.job.i]?.b === o);
+      if (o.type === 'mill') { // the millstone turns while it works
+        const a = o._busy ? t * 2 : 0;
+        ctx.fillStyle = '#928d80'; ctx.beginPath(); ctx.ellipse(sx, sy + 8, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#bdb8a9'; ctx.beginPath(); ctx.ellipse(sx, sy + 5, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#6e6a60'; ctx.beginPath(); ctx.moveTo(sx, sy + 5); ctx.lineTo(sx + Math.cos(a) * 16, sy + 5 + Math.sin(a) * 6); ctx.stroke();
+      }
+      if (o._busy && Math.random() < 0.15) this.particles.push({ k: 'smoke', x: sx + (Math.random() - 0.5) * 20, y: sy - 6, vx: (Math.random() - 0.5) * 3, vy: -6, life: 1.6, r: 1.2 });
+      if (spec.glow && o._busy) { const [gx, gy, gw, gh] = spec.glow; ctx.fillStyle = `rgba(255,150,60,${0.45 + Math.sin(t * 6) * 0.15})`; ctx.fillRect(gx, gy, gw, gh); }
+      if (wk) add(sy + 14, () => { wk._anim = 'work'; this.drawWorker(wk, sx + 20, sy + 14); });
+    }
+    // farmers at work in the greenhouse
+    for (const w of s.workers) if (w._in === o.id) { const i = (w.id * 3) % Math.max(1, o.beds?.length || 1), X = 40 + (i % 7) * 26, Y = 70 + Math.floor(i / 7) * 10; add(Y, () => this.drawWorker(w, X, Y)); }
+    // pets nap by the fire at home
+    if (o.type === 'farmhouse') s.pets.forEach((p, i) => add(70 + i * 6, () => { const cv = petFrame(p.kind, PETS[p.kind].colors[p.color] || PETS[p.kind].colors[0], 3, false); this.blit(cv, 40 + i * 18, 76 + i * 5, 0); }));
+    list.sort((a, b) => a[0] - b[0]);
+    for (const [, fn] of list) fn();
+    this.drawParticles(dt);
+    this.lightRoom(room, t);
+    this.drawFloats(dt);
+  }
+
+  /**
+   * Light a room for the time of day (the same clock as outside): sunbeams
+   * through the windows by day; at night it goes dark and moody, the windows
+   * turn deep blue and only the lamps, candles and fires light it.
+   */
+  lightRoom(room, t) {
+    const ctx = this.ctx, dark = this.darkness(), S = this.scale;
+    const ox = this.cv.width / 2 - this.cam.x * S, oy = this.cv.height / 2 - this.cam.y * S;
+    const wx = (x) => ox + x * S, wy = (y) => oy + y * S;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (dark < 0.3) {
+      // daylight: soft beams falling from each window onto the floor
+      const a = 0.11 * (1 - dark / 0.3);
+      ctx.fillStyle = `rgba(255,244,200,${a})`;
+      for (const [x, y, w, h] of room.wins) {
+        if (h > 30) continue; // the greenhouse glass is lit all over instead
+        ctx.beginPath(); ctx.moveTo(wx(x), wy(y + h)); ctx.lineTo(wx(x + w), wy(y + h)); ctx.lineTo(wx(x + w + 26), wy(y + h + 70)); ctx.lineTo(wx(x + 14), wy(y + h + 70)); ctx.closePath(); ctx.fill();
+      }
+      if (room.wins.some((w) => w[3] > 30)) { ctx.fillStyle = `rgba(255,250,220,${a * 0.8})`; ctx.fillRect(wx(0), wy(0), RW * S, RH * S); }
+    }
+    if (dark <= 0.02) return;
+    // night falls inside too: windows go dark blue first
+    for (const [x, y, w, h] of room.wins) {
+      ctx.fillStyle = `rgba(16,26,64,${Math.min(0.85, dark * 1.3)})`; ctx.fillRect(wx(x), wy(y), w * S, h * S);
+      if (dark > 0.35) { ctx.fillStyle = 'rgba(255,250,220,0.8)'; ctx.fillRect(wx(x + w * 0.3), wy(y + h * 0.25), S, S); ctx.fillRect(wx(x + w * 0.75), wy(y + h * 0.5), S, S); }
+    }
+    // darkness with holes where the lamps are
+    const L = this.roomDarkCv ||= document.createElement('canvas'), k = 2;
+    const lw = Math.ceil(this.cv.width / k), lh = Math.ceil(this.cv.height / k);
+    if (L.width !== lw || L.height !== lh) { L.width = lw; L.height = lh; }
+    const lc = L.getContext('2d');
+    lc.setTransform(1, 0, 0, 1, 0, 0); lc.globalCompositeOperation = 'source-over'; lc.clearRect(0, 0, lw, lh);
+    lc.fillStyle = `rgba(10,14,36,${Math.min(0.68, dark * 1.15)})`; lc.fillRect(0, 0, lw, lh);
+    lc.globalCompositeOperation = 'destination-out';
+    for (const [x, y, r, c] of room.lights) {
+      const flick = c === 'fire' ? 1 + Math.sin(t * 9 + x) * 0.06 : 1 + Math.sin(t * 2 + x) * 0.015;
+      const X = wx(x) / k, Y = wy(y) / k, R = (r * S * flick) / k;
+      const g = lc.createRadialGradient(X, Y, 0, X, Y, R);
+      g.addColorStop(0, 'rgba(0,0,0,0.95)'); g.addColorStop(0.55, 'rgba(0,0,0,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      lc.fillStyle = g; lc.fillRect(X - R, Y - R, R * 2, R * 2);
+    }
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(L, 0, 0, lw * k, lh * k); ctx.imageSmoothingEnabled = false;
+    // and a warm glow around each light
+    ctx.globalCompositeOperation = 'lighter';
+    for (const [x, y, r, c] of room.lights) {
+      const R = r * 0.8 * S, g = ctx.createRadialGradient(wx(x), wy(y), 0, wx(x), wy(y), R);
+      g.addColorStop(0, c === 'fire' ? `rgba(255,130,50,${0.45 * dark})` : `rgba(255,190,100,${0.32 * dark})`); g.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.fillStyle = g; ctx.fillRect(wx(x) - R, wy(y) - R, R * 2, R * 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   // ---------- the quarry ----------

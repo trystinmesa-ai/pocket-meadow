@@ -2,7 +2,7 @@
 // placement rules and the derived effects of upgrades.
 import { BUNDLE_ROOMS, MAP, DEFS, ITEMS, CROPS, START_PARCELS, SAVE_VERSION, UPGRADES, CHARM_BONUS_PER, CHARM_BONUS_MAX,
   BEE_FLOWERS, SKIN, HAIR, SHIRTS, PANTS, WORKER_NAMES, QUARRY, shedCap, VILLAGERS, PROJECTS, PERKS, HEARTS, ORDER_SLOTS, GOLD_BASE,
-  MUSEUM_WINGS, MUSEUM_REWARD } from './data.js';
+  MUSEUM_WINGS, MUSEUM_REWARD, bedCount } from './data.js';
 
 export const PW = MAP.w / MAP.parcel;
 export const PH = MAP.h / MAP.parcel;
@@ -96,6 +96,7 @@ export function initObject(o) {
   if (d.animal) { o.lvl ||= 1; o.feed ||= 0; o.prog ||= 0; o.out ||= 0; o.joy ??= 30; }
   if (d.hive) { o.lvl ||= 1; o.prog ||= 0; o.out ||= 0; }
   if (d.store) { o.lvl ||= 1; }
+  if (d.beds) { o.lvl ||= 1; o.beds ||= []; while (o.beds.length < bedCount(o.lvl)) o.beds.push({ crop: null, st: 'empty', p: 0 }); }
   return o;
 }
 
@@ -158,7 +159,7 @@ export class World {
       if (d.store) { this.storages.push(o); this.capacity += storeCap(o); }
       if (o.type === 'well') this.wells.push(o);
       if (DEFS[o.type].radius) this.sprinklers.push(o);
-      if (d.gh) this.greenhouses.push(o);
+      if (d.beds) { initObject(o); this.greenhouses.push(o); }
       if (d.animal) this.animals.push(o);
       if (d.hive) this.hives.push(o);
       if (d.houses) this.housing += d.houses;
@@ -179,12 +180,6 @@ export class World {
     for (const sp of this.sprinklers) {
       const r = DEFS[sp.type].radius;
       for (let y = sp.y - r; y <= sp.y + r; y++) for (let x = sp.x - r; x <= sp.x + r; x++) if (inMap(x, y)) this.sprinkled.add(idx(x, y));
-    }
-    // greenhouse cover: every tile within reach of a finished greenhouse
-    this.sheltered = new Set();
-    for (const g of this.greenhouses) {
-      const d = DEFS[g.type], r = d.gh;
-      for (let y = g.y - r; y < g.y + d.h + r; y++) for (let x = g.x - r; x < g.x + d.w + r; x++) if (inMap(x, y)) this.sheltered.add(idx(x, y));
     }
     this.fx = effects(s, this);
     this.version = (this.version || 0) + 1;

@@ -329,3 +329,6 @@ body.inquarry #goal, body.inquarry #card.open ~ #scenebar { display: none; }
 body.visiting #goal { display: none; }
 .code { font-family: ui-monospace, monospace; letter-spacing: 1px; background: #fff4da; padding: 0 4px; border-radius: 3px; }
 #pal-code, #share-name { flex: 1; min-width: 0; font: inherit; padding: 5px 7px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fffaf0; }
+/* building interiors */
+body.inside #goal, body.inside #card.open ~ #scenebar { display: none; }
+#scenebar .thumb.xs { width: 28px; height: 28px; object-fit: contain; image-rendering: pixelated; }

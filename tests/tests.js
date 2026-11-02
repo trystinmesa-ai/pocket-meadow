@@ -740,18 +740,30 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   wh.rebuild(); wh._t = heatT; run(wh, 10, true);
   const [dryP, wetP] = wh.plots;
   ok(wh.weather === 'heat' && dryP.p / wetP.p < 0.6, 'Heat waves slow crops that aren’t watered', `${dryP.p.toFixed(4)} vs ${wetP.p.toFixed(4)}`);
-  // greenhouse: a seasonal crop out of season
+  // greenhouse: its own beds inside grow anything, in any season
   const wg = empty(), sg = wg.state; rich(wg, 20); wg._t = T0;
   const { seasonAt } = await import('../js/seasons.js');
   const nowSeason = seasonAt(T0).id;
   const offSeason = Object.keys(CROPS).find((c) => CROPS[c].season && CROPS[c].season !== nowSeason);
   sg.objects.push(initObject({ id: sg.nextId++, type: 'plot', x: 19, y: 21, crop: offSeason }));
-  newWorker(sg, 'farmer', 'Pip'); sg.workers[0].x = 19.5; sg.workers[0].y = 22.5; wg.rebuild();
+  newWorker(sg, 'farmer', 'Pip'); newWorker(sg, 'hauler', 'Bea'); sg.workers[0].x = 19.5; sg.workers[0].y = 22.5; wg.rebuild();
   run(wg, 20, true);
-  ok(wg.plots[0].st === 'empty', 'Out of season, a seasonal crop waits', offSeason);
-  ok(E.place(wg, 'greenhouse', 20, 20) === '' && wg.sheltered.has(21 * D.MAP.w + 19), 'A greenhouse shelters the plots around it');
-  run(wg, 20, true);
-  ok(wg.plots[0].st !== 'empty', 'Under the greenhouse it gets planted anyway', wg.plots[0].st);
+  ok(wg.plots[0].st === 'empty', 'Out of season, a seasonal crop waits in the fields', offSeason);
+  ok(E.place(wg, 'greenhouse', 22, 20) === '', 'A greenhouse can be built');
+  const gh = wg.objAt(22, 20);
+  ok(gh.beds.length === D.bedCount(1) && gh.beds.every((b) => !b.crop), 'It comes with empty beds inside', `${gh.beds.length}`);
+  ok(E.setBedCrop(wg, gh, 0, offSeason) === '' && E.setAllBeds(wg, gh, offSeason) === '' && gh.beds.every((b) => b.crop === offSeason), 'Beds take any seed, one at a time or all at once');
+  run(wg, 60, true);
+  ok(gh.beds.some((b) => b.st !== 'empty'), 'Farmers go in and plant them, even out of season', gh.beds.map((b) => b.st[0]).join(''));
+  for (const b of gh.beds) if (b.st === 'grow') b.p = 0.999;
+  const h0 = sg.stats.harvest[offSeason] || 0;
+  run(wg, 120, true);
+  ok((sg.stats.harvest[offSeason] || 0) > h0, 'And harvest them', `+${(sg.stats.harvest[offSeason] || 0) - h0}`);
+  ok(!sg.workers.some((x) => x._hidden && !x.job), 'Nobody gets stuck inside');
+  sg.coins = 1e6; sg.mats = { wood: 1e5, stone: 1e5, copper: 1e5, iron: 1e5, gold: 1e5 };
+  ok(E.upgradeBuilding(wg, gh) === '' && gh.beds.length === D.bedCount(2), 'Upgrading adds beds', `${gh.beds.length}`);
+  const back0 = migrate(JSON.parse(serialize(sg)));
+  ok(back0.objects.find((o) => o.type === 'greenhouse').beds.length === D.bedCount(2), 'Beds are saved');
   // animals grow happier and produce faster
   const wa = fresh(); rich(wa, 12);
   let coop; for (let y = 10; y < 34 && !coop; y++) for (let x = 8; x < 40 && !coop; x++) if (E.place(wa, 'coop', x, y) === '') coop = wa.objAt(x, y);
@@ -847,6 +859,31 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   await Cloud.signOut();
   localStorage.removeItem('meadow.sync.u1'); localStorage.removeItem('meadow.sync.u2');
   Cloud._setFetch((...a) => fetch(...a));
+}
+
+// 31. building interiors draw for every building that has one
+{
+  const I = await import('../js/art/interiors.js');
+  const { Renderer } = await import('../js/render.js');
+  const w = fresh(); rich(w, 30, 1e9);
+  for (let n = 0; n < 40; n++) for (let py = 0; py < 5; py++) for (let px = 0; px < 6; px++) E.buyParcel(w, px, py);
+  const cv = document.createElement('canvas'); cv.style.width = '400px'; cv.style.height = '700px'; document.body.appendChild(cv);
+  const R = new Renderer(cv, w);
+  const errs = [], types = Object.keys(DEFS).filter((k) => I.hasInterior(k));
+  for (const type of types) {
+    let o = w.objects.find((x) => x.type === type);
+    if (!o) { for (let y = 2; y < 38 && !o; y++) for (let x = 2; x < 46 && !o; x++) if (E.place(w, type, x, y) === '') o = w.objAt(x, y); }
+    if (!o) { errs.push(`${type}: couldn't place`); continue; }
+    try {
+      I.roomCanvas(o);
+      R.insideId = o.id; R.setScene('inside');
+      for (let i = 0; i < 5; i++) R.draw(0.1);
+      R.setScene('farm'); R.draw(0.1);
+    } catch (e) { errs.push(`${type}: ${e.message}`); }
+  }
+  cv.remove();
+  ok(types.length >= 20 && !errs.length, 'Every building interior draws', `${types.length} rooms ${errs.join('; ')}`);
+  ok(!I.hasInterior('crate') && !I.hasInterior('market') && !I.hasInterior('plot'), 'Small things and the market keep their usual card');
 }
 
 // ---- report ----

@@ -499,9 +499,9 @@ export const DEFS = {
   goldscarecrow:{ name: 'Golden Scarecrow', cat: 'decor', w: 1, h: 1, level: 1, cost: 0, unique: true, bundle: 'all', charm: 120, light: 1 },
 
   // debris that turns up on open land; farmhands clear it for materials
-  // shelters the fields around it: any crop grows here in any season (out-of-season ones a bit slower)
-  greenhouse:  { name: 'Greenhouse', cat: 'utility', w: 3, h: 2, level: 14, cost: grow(25000, 1.6), gh: 2,
-    desc: 'Plots within 2 tiles grow any crop in any season (out-of-season crops at 75% speed) and shrug off heat waves.' },
+  // a glass house with its own beds inside: any crop, any season, always watered
+  greenhouse:  { name: 'Greenhouse', cat: 'utility', w: 3, h: 2, level: 14, cost: grow(25000, 1.6), upg: 8000, maxLvl: 5, beds: true,
+    desc: 'Has its own beds inside where any crop grows in any season, always watered. Tap it to go in and pick seeds. Upgrading adds beds.' },
   // only sold by the travelling merchant
   geode:       { name: 'Crystal Geode', cat: 'decor', w: 1, h: 1, level: 1, cost: 12000, merchant: true, charm: 30 },
   starlamp:    { name: 'Star Lantern', cat: 'decor', w: 1, h: 1, level: 1, cost: 18000, merchant: true, charm: 35, light: 1, tall: true },
@@ -622,7 +622,7 @@ export const BUILD_TABS = [
 // ---------- Farmhands ----------
 // tasks are listed in the order a farmhand of that role looks for them.
 export const ROLES = {
-  farmer:  { name: 'Farmer', desc: 'Plants, waters and harvests fields and trees.', tasks: ['harvest', 'plant', 'water', 'pickTree'], hat: 'straw' },
+  farmer:  { name: 'Farmer', desc: 'Plants, waters and harvests fields, trees and greenhouse beds.', tasks: ['harvest', 'plant', 'greenhouse', 'water', 'pickTree'], hat: 'straw' },
   hauler:  { name: 'Hauler', desc: 'Carries harvests to storage and supplies buildings.', tasks: ['haulPile', 'collect', 'supply', 'feed'], hat: 'cap' },
   artisan: { name: 'Artisan', desc: 'Runs the mill, bakery and other workshops.', tasks: ['operate', 'supply', 'collect'], hat: 'bandana' },
   rancher: { name: 'Rancher', desc: 'Feeds animals and gathers eggs, milk, wool and honey.', tasks: ['feed', 'collectAnimal', 'pickTree', 'haulPile'], hat: 'wide' },
@@ -719,7 +719,7 @@ export const MAX_PETS = 4;
 export const petCost = (n) => Math.round(400 * Math.pow(3, n));
 export const PET_NAMES = ['Biscuit', 'Mochi', 'Pumpkin', 'Waffles', 'Pepper', 'Clover', 'Bean', 'Nutmeg', 'Toffee', 'Sprout', 'Maple', 'Pudding', 'Hazel', 'Pickle', 'Button', 'Juniper'];
 // Everything a farmhand can do when their own job has nothing waiting.
-export const ALL_TASKS = ['harvest', 'haulPile', 'plant', 'operate', 'supply', 'collect', 'feed', 'collectAnimal', 'pickTree', 'water', 'build', 'clear'];
+export const ALL_TASKS = ['harvest', 'haulPile', 'plant', 'greenhouse', 'operate', 'supply', 'collect', 'feed', 'collectAnimal', 'pickTree', 'water', 'build', 'clear'];
 
 export const WORKER_NAMES = ['Pip', 'Bea', 'Tomo', 'Juniper', 'Odie', 'Marigold', 'Rook', 'Fern', 'Basil', 'Clover', 'Hazel', 'Milo',
   'Poppy', 'Sorrel', 'Wren', 'Otto', 'Daisy', 'Finch', 'Ivy', 'Bram', 'Lumi', 'Moss', 'Nettle', 'Quill', 'Rosa', 'Sage'];
@@ -822,6 +822,8 @@ export const GOLD_BASE = 0.03, GOLD_MULT = 3;
 // one giant crop that gives twice as much.
 export const GIANT_CROPS = new Set(['pumpkin', 'watermelon', 'honeydew', 'cabbage', 'sunflower']);
 export const GIANT_CHANCE = 0.12;
+/** Beds inside a greenhouse: 12 at first, 4 more per upgrade. */
+export const bedCount = (lvl = 1) => 8 + 4 * lvl;
 
 // ---------- Travelling merchant ----------
 // Once the old bridge is fixed, a merchant's cart visits for a few hours every

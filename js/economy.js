@@ -122,6 +122,22 @@ export function setCrop(world, plot, crop) {
   return '';
 }
 
+/** Pick a greenhouse bed's crop (works like a field plot, but any season). */
+export function setBedCrop(world, g, i, crop) {
+  const b = g.beds[i];
+  if (!b) return 'No such bed';
+  if (!world.state.seeds[crop]) return 'Unlock this seed first';
+  if (b.st === 'empty') { b.crop = crop; delete b.next; }
+  else if (crop === b.crop) delete b.next;
+  else b.next = crop;
+  return '';
+}
+export function setAllBeds(world, g, crop) {
+  let why = '';
+  g.beds.forEach((_, i) => { why = setBedCrop(world, g, i, crop) || why; });
+  return why;
+}
+
 // ---------- seeds per planting ----------
 // Farmers pay for seeds as they plant. Away from the game, earnings wait in
 // pendingCoins, so planting can use those too. A broke farm still gets wheat

@@ -25,8 +25,8 @@ export function weatherAt(world, tMs) {
   return 'clear';
 }
 export function isRaining(world, tMs) { const w = weatherAt(world, tMs); return w === 'rain' || w === 'storm'; }
-/** Can this plot grow that crop right now? (greenhouses shelter seasonal crops) */
-export const plantable = (world, p, crop = p.crop) => canPlantNow(crop, world.season) || world.sheltered.has(idx(p.x, p.y));
+/** Can this field plot grow its crop right now? (seasonal crops only in their season; greenhouse beds grow anything) */
+export const plantable = (world, p, crop = p.crop) => canPlantNow(crop, world.season);
 
 export const animalCount = (a) => DEFS[a.type].animal.count + (a.lvl - 1);
 export const animalCap = (a) => 6 + 4 * a.lvl;
@@ -178,15 +178,19 @@ export function step(world, dt, fast, now) {
   for (const p of world.plots) {
     if (p.st === 'grow') {
       if (!p.wet && (rain || world.sprinkled.has(idx(p.x, p.y)))) p.wet = true;
-      const shel = world.sheltered.size && world.sheltered.has(idx(p.x, p.y));
-      // greenhouse plots grow out-of-season crops at 75%, and heat waves only slow unwatered crops outside
-      const sg = shel && !canPlantNow(p.crop, world.season) ? 0.75 : seasonGrowth(p.crop, world.season);
-      p.p += (dt / CROPS[p.crop].time) * fx.grow * (p.wet ? fx.water : heat && !shel ? 0.75 : 1) * sg;
+      // heat waves slow crops that aren't watered
+      p.p += (dt / CROPS[p.crop].time) * fx.grow * (p.wet ? fx.water : heat ? 0.75 : 1) * seasonGrowth(p.crop, world.season);
       if (p.p >= 1) { p.p = 1; p.st = 'ripe'; if (GIANT_CROPS.has(p.crop)) tryGiant(world, p); }
       else if (!p.wet && p.p < 0.75) dry++;
     }
     if (p.st === 'ripe') ripe++;
     else if (p.st === 'empty') empty++;
+  }
+  // greenhouse beds: any season, always watered, no weather
+  let ghWork = 0;
+  for (const g of world.greenhouses) {
+    for (const b of g.beds) if (b.st === 'grow') { b.p += (dt / CROPS[b.crop].time) * fx.grow * fx.water; if (b.p >= 1) { b.p = 1; b.st = 'ripe'; } }
+    if (!g._cg && ghTasks(world, g).length) ghWork++;
   }
   let ripeTrees = 0;
   for (const t of world.trees) {
@@ -230,7 +234,7 @@ export function step(world, dt, fast, now) {
   let pileQty = 0;
   for (const p of s.piles) pileQty += p.qty;
   world.pileQty = pileQty;
-  world.avail = { ripe, empty, dry, ripeTrees, feedNeed, animalOut, piles: s.piles.length };
+  world.avail = { ripe, empty, dry, ripeTrees, feedNeed, animalOut, piles: s.piles.length, gh: ghWork };
 
   ordersTick(world, now);
   festivalTick(world, now);
@@ -316,6 +320,7 @@ function ordersTick(world, now) {
 export function producible(world) {
   const s = world.state, out = new Set();
   for (const c in CROPS) if (cropUnlocked(s, c) && (!CROPS[c].season || CROPS[c].season === world.season?.id)) out.add(c);
+  for (const g of world.greenhouses) for (const b of g.beds) if (b.crop) out.add(b.crop);
   for (const t of world.trees) out.add(DEFS[t.type].fruit);
   for (const a of world.animals) out.add(DEFS[a.type].animal.item);
   for (const h of world.hives) out.add(DEFS[h.type].hive.item);
@@ -659,6 +664,16 @@ const FIND = {
     }, 'basket');
     return deliver(job, false);
   },
+  greenhouse(world, w) {
+    if (!world.avail.gh) return null;
+    const g = nearest(world.greenhouses, w, (o) => !o._cg && !bad(world, o) && ghTasks(world, o).length);
+    if (!g) return null;
+    const [x, y] = accessTile(world, g);
+    const job = new Job(w, 'greenhouse', 'Tending the Greenhouse').claim(g, '_cg');
+    job.go(x, y, g.id);
+    job.steps.push({ t: 'gh', g });
+    return deliver(job, true);
+  },
   // lend a hand on a building that's going up (each swing takes time off the wait)
   build(world, w) {
     if (!world.avail.sites) return null;
@@ -888,6 +903,7 @@ export function endJob(world, w) {
   if (w.job) w.job.release();
   w.job = null;
   w._hidden = false;
+  delete w._in;
 }
 
 /** Stop any farmhand whose job involves this object (it was moved or removed). */
@@ -924,6 +940,7 @@ export function updateWorker(world, w, dt, fast) {
       continue;
     }
     if (s.t === 'craft') { dt = doCraft(world, w, s, dt); continue; }
+    if (s.t === 'gh') { dt = doGreenhouse(world, w, s, dt); continue; }
     job.i++;
   }
 }
@@ -993,6 +1010,64 @@ function doCraft(world, w, s, dt) {
     s.done++;
     addXp(world, w, 3);
   }
+  return dt;
+}
+
+// ---------- greenhouse ----------
+/**
+ * What a farmer would do in this greenhouse now: ripe beds of one crop (as
+ * many as a basket holds) and empty beds waiting to be planted.
+ */
+export function ghTasks(world, g) {
+  const s = world.state, out = [];
+  let crop = null, room = world.fx.carry;
+  g.beds.forEach((b, i) => {
+    if (b.st === 'ripe' && room > 0 && (!crop || b.crop === crop)) { crop = b.crop; room -= CROPS[b.crop].yield; out.push(i); }
+    else if (b.st === 'empty' && b.crop && cropUnlocked(s, b.crop) && canAffordSeeds(world, b.crop)) out.push(i);
+  });
+  return out;
+}
+// The farmer goes inside (hidden on the farm, shown in the greenhouse), then
+// harvests and plants everything on the list at the end.
+function doGreenhouse(world, w, s, dt) {
+  const g = s.g;
+  if (!world.byId.has(g.id)) { w._hidden = false; delete w._in; w.job.i++; return dt; }
+  if (s.left === undefined) {
+    s.tasks = ghTasks(world, g);
+    if (!s.tasks.length) { w.job.i++; return dt; }
+    s.left = wDur(world, w, 0.9) * s.tasks.length;
+  }
+  w._hidden = true; w._in = g.id; w._anim = 'work'; w._tool = 'hoe';
+  const u = Math.min(dt, s.left);
+  s.left -= u; dt -= u;
+  if (s.left > 1e-6) return dt;
+  const st = world.state;
+  for (const i of s.tasks) {
+    const b = g.beds[i];
+    if (!b) continue;
+    if (b.st === 'ripe') {
+      const c = CROPS[b.crop], item = b.crop;
+      if (w.carry && w.carry.item !== item) continue;
+      let n = c.yield + (R() < world.fx.bumper ? 1 : 0);
+      st.stats.harvest[item] = (st.stats.harvest[item] || 0) + n;
+      const goldP = world.fx.gold + 0.005 * (w.lvl - 1) + 0.02;
+      let stars = 0; for (let k = 0; k < n; k++) if (R() < goldP) stars++;
+      if (stars) { n -= stars; st.gold[item] = (st.gold[item] || 0) + stars; }
+      if (n > 0) setCarry(w, item, n);
+      if (b.next) { b.crop = b.next; delete b.next; b.st = 'empty'; b.p = 0; } else if (c.regrow) { b.st = 'grow'; b.p = c.regrow; } else { b.st = 'empty'; b.p = 0; }
+      addXp(world, w, 2);
+    } else if (b.st === 'empty' && b.crop && cropUnlocked(st, b.crop) && paySeeds(world, b.crop)) {
+      b.st = 'grow'; b.p = 0; addXp(world, w, 1);
+    }
+  }
+  // anything past a full basket waits in a basket by the door
+  if (w.carry && w.carry.qty > world.fx.carry) {
+    const extra = w.carry.qty - world.fx.carry, keep = { ...w.carry, qty: world.fx.carry };
+    w.carry = { item: keep.item, qty: extra };
+    const [x, y] = accessTile(world, g); dropPile(world, w, x, y); w.carry = keep;
+  }
+  w._hidden = false; delete w._in;
+  w.job.i++;
   return dt;
 }
 

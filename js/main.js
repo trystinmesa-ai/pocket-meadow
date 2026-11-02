@@ -311,7 +311,11 @@ class Game {
   resetFarm() {
     backupLocal();
     wipeLocal();
+    const old = this.world.state;
     const state = newGame();
+    // friends belong to the account, not the farm: keep the share code and friends list
+    if (old.share) state.share = old.share;
+    if (old.pals) state.pals = old.pals;
     const meta = Cloud.syncMeta();
     this.world = new World(state);
     this.R.setWorld(this.world);
