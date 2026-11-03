@@ -965,11 +965,11 @@ export class Renderer {
     if (spec.station) {
       const [sx, sy] = spec.station;
       const wk = o._busy && s.workers.find((w) => w._hidden && w.job && w.job.steps[w.job.i]?.b === o);
-      if (o.type === 'mill') { // the millstone turns while it works
-        const a = o._busy ? t * 2 : 0;
-        ctx.fillStyle = '#928d80'; ctx.beginPath(); ctx.ellipse(sx, sy + 8, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#bdb8a9'; ctx.beginPath(); ctx.ellipse(sx, sy + 5, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#6e6a60'; ctx.beginPath(); ctx.moveTo(sx, sy + 5); ctx.lineTo(sx + Math.cos(a) * 16, sy + 5 + Math.sin(a) * 6); ctx.stroke();
+      if (o.type === 'mill' && o._busy) { // the top stone turns while it works, sending a little flour dust up
+        const a = t * 2.5, cx = 112, cy = 68;
+        ctx.strokeStyle = '#6e6a60'; ctx.lineWidth = 1;
+        for (let k = 0; k < 3; k++) { const b = a + (k * Math.PI * 2) / 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(b) * 15, cy + Math.sin(b) * 4.5); ctx.stroke(); }
+        if (Math.random() < 0.2) this.particles.push({ k: 'smoke', x: cx + (Math.random() - 0.5) * 30, y: cy - 2, vx: 0, vy: -4, life: 1, r: 0.8 });
       }
       if (o._busy && Math.random() < 0.15) this.particles.push({ k: 'smoke', x: sx + (Math.random() - 0.5) * 20, y: sy - 6, vx: (Math.random() - 0.5) * 3, vy: -6, life: 1.6, r: 1.2 });
       if (spec.glow && o._busy) { const [gx, gy, gw, gh] = spec.glow; ctx.fillStyle = `rgba(255,150,60,${0.45 + Math.sin(t * 6) * 0.15})`; ctx.fillRect(gx, gy, gw, gh); }

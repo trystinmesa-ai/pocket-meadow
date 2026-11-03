@@ -93,6 +93,7 @@ function pendant(P, x, y, c = '#3a6a5a') { P.vl(x + 4, 0, y, C.stoneDD); P.r(x, 
 function fairyLights(P, x, y, w) { for (let i = 0; i < w; i += 2) P.px(x + i, y + Math.round(Math.sin(i / 8) * 3), C.woodDD); for (let i = 4; i < w; i += 14) { const yy = y + Math.round(Math.sin(i / 8) * 3) + 1; P.r(x + i, yy, 2, 2, [C.yellow, C.pink, '#a8e0ff', C.leafL][(i / 14 | 0) % 4]); light(x + i + 1, yy + 1, 26); } }
 function lamp(P, x, y) { P.vl(x + 3, y + 5, 10, C.woodDD); P.r(x, y, 8, 6, C.glow); P.hl(x, y, 8, '#fff0b0'); P.r(x + 1, y + 15, 6, 2, C.woodDD); light(x + 4, y + 3, 34); }
 function bed(P, x, y, blanket) {
+  P.hl(x + 1, y + 28, 16, 'rgba(40,24,30,0.3)');
   P.r(x, y, 18, 28, C.woodD); P.r(x + 1, y + 1, 16, 26, C.woodL);
   P.r(x + 2, y + 2, 14, 7, C.white); P.hl(x + 2, y + 8, 14, C.whiteD);
   P.r(x + 2, y + 10, 14, 16, blanket); P.hl(x + 2, y + 10, 14, shade(blanket, 0.25));
@@ -109,7 +110,7 @@ function armchair(P, x, y, c) { P.rr(x, y, 16, 14, shade(c, -0.25)); P.rr(x + 2,
 function sofa(P, x, y, c) { P.rr(x, y, 34, 14, shade(c, -0.25)); P.r(x + 2, y + 1, 30, 7, c); P.r(x + 2, y + 8, 30, 5, shade(c, 0.15)); P.vl(x + 17, y + 8, 5, shade(c, -0.1)); P.r(x + 4, y + 3, 6, 5, C.cream); P.r(x + 24, y + 3, 6, 5, C.yellow); }
 function rug(P, x, y, w, h, c) { P.rr(x, y, w, h, c); P.rr(x + 2, y + 2, w - 4, h - 4, shade(c, 0.2)); P.rr(x + 4, y + 4, w - 8, h - 8, c); for (let i = 2; i < w - 2; i += 3) { P.px(x + i, y - 1, C.cream); P.px(x + i, y + h, C.cream); } }
 function rugRound(P, x, y, w, h, c) { P.oval(x, y, w, h, c); P.oval(x + 3, y + 2, w - 6, h - 4, shade(c, 0.2)); P.oval(x + 7, y + 4, w - 14, h - 8, c); }
-function table(P, x, y, w = 24) { P.r(x, y, w, 10, C.wood); P.hl(x, y, w, C.woodL); P.hl(x, y + 9, w, C.woodDD); P.r(x + 1, y + 10, 2, 5, C.woodDD); P.r(x + w - 3, y + 10, 2, 5, C.woodDD); }
+function table(P, x, y, w = 24) { P.hl(x + 1, y + 15, w - 2, 'rgba(40,24,30,0.22)'); P.r(x, y, w, 10, C.wood); P.hl(x, y, w, C.woodL); P.hl(x, y + 9, w, C.woodDD); P.r(x + 1, y + 10, 2, 5, C.woodDD); P.r(x + w - 3, y + 10, 2, 5, C.woodDD); }
 function cloth(P, x, y, w, c = '#e8d8f0') { P.r(x - 1, y - 1, w + 2, 7, c); for (let i = 0; i < w + 2; i += 4) P.r(x - 1 + i, y + 6, 2, 2, c); }
 function chair(P, x, y) { P.r(x, y, 8, 3, C.woodD); P.r(x, y + 3, 8, 5, C.wood); P.r(x, y + 8, 2, 3, C.woodDD); P.r(x + 6, y + 8, 2, 3, C.woodDD); }
 function cafeTable(P, c, x, y, k) { chair(P, x - 10, y + 2); chair(P, x + 14, y + 2); P.oval(x, y, 14, 6, C.white); P.oval(x + 1, y + 1, 12, 4, '#f4efe6'); P.vl(x + 6, y + 6, 6, C.stoneDD); P.hl(x + 3, y + 12, 8, C.stoneDD); if (k) icon(c, k, x + 1, y - 7); candle(P, x + 10, y - 5); }
@@ -136,7 +137,7 @@ function fireplace(P, x, y) {
   P.r(x, y, 34, 30, C.brick); for (let j = 0; j < 30; j += 5) P.hl(x, y + j, 34, C.brickD); P.r(x - 2, y - 2, 38, 4, C.stoneD);
   P.r(x + 7, y + 12, 20, 18, '#2a1e1e'); P.r(x + 10, y + 24, 14, 4, C.woodD); light(x + 17, y + 22, 44, 'fire');
 }
-function barrel(P, x, y) { P.rr(x, y, 12, 15, C.wood); P.hl(x, y + 3, 12, C.stoneDD); P.hl(x, y + 11, 12, C.stoneDD); P.vl(x + 2, y + 1, 13, C.woodL); P.oval(x + 1, y - 1, 10, 4, C.woodD); }
+function barrel(P, x, y) { P.hl(x + 1, y + 15, 10, 'rgba(40,24,30,0.28)'); P.rr(x, y, 12, 15, C.wood); P.hl(x, y + 3, 12, C.stoneDD); P.hl(x, y + 11, 12, C.stoneDD); P.vl(x + 2, y + 1, 13, C.woodL); P.oval(x + 1, y - 1, 10, 4, C.woodD); }
 function crate(P, x, y, s = 14) { P.r(x, y, s, s, C.wood); P.r(x, y, s, 2, C.woodL); P.line(x, y + s - 1, x + s - 1, y, C.woodD); P.vl(x, y, s, C.woodDD); P.vl(x + s - 1, y, s, C.woodDD); P.hl(x, y + s - 1, s, C.woodDD); }
 function produceCrate(P, c, x, y, k) { crate(P, x, y, 16); icon(c, k, x + 1, y - 4); icon(c, k, x + 6, y - 5); }
 function sack(P, c, x, y, k) { P.oval(x, y + 3, 14, 13, '#d8c49a'); P.oval(x + 3, y, 8, 6, '#c8b088'); P.hl(x + 4, y + 4, 6, '#a8905e'); if (k) icon(c, k, x + 2, y + 6); }
@@ -163,7 +164,18 @@ function bottleRack(P, x, y, c) { P.r(x, y, 34, 26, C.woodD); for (let j = 0; j 
 function gear(P, x, y, r = 10) { P.oval(x - r, y - r, r * 2, r * 2, '#8a7a6a'); P.oval(x - r + 3, y - r + 3, r * 2 - 6, r * 2 - 6, '#a8988a'); P.oval(x - 2, y - 2, 4, 4, '#5a4a3a'); for (const [dx, dy] of [[0, -r - 2], [0, r], [-r - 2, 0], [r, 0]]) P.r(x + dx, y + dy, 2, 2, '#8a7a6a'); }
 function loomFrame(P, x, y) { P.r(x, y, 40, 4, C.woodD); P.r(x, y + 24, 40, 4, C.woodD); P.vl(x + 2, y, 30, C.wood); P.vl(x + 37, y, 30, C.wood); for (let i = 5; i < 36; i += 3) P.vl(x + i, y + 4, 20, i % 6 ? '#e98aa8' : '#f4efe6'); P.r(x + 6, y + 14, 28, 2, C.woodL); }
 function spinningWheel(P, x, y) { P.oval(x, y, 22, 22, C.woodD); P.oval(x + 3, y + 3, 16, 16, C.wood); P.oval(x + 5, y + 5, 12, 12, '#d8c49a'); P.line(x + 11, y + 2, x + 11, y + 20, C.woodD); P.line(x + 2, y + 11, x + 20, y + 11, C.woodD); P.line(x + 11, y + 22, x + 6, y + 30, C.woodD); P.line(x + 11, y + 22, x + 16, y + 30, C.woodD); P.r(x + 20, y + 6, 6, 3, '#f4efe6'); }
-function press(P, x, y) { P.r(x, y + 16, 30, 16, C.wood); P.r(x + 2, y + 18, 26, 10, '#7a2a3a'); P.vl(x + 14, y - 6, 22, C.stoneDD); P.vl(x + 15, y - 6, 22, C.stoneD); P.r(x + 4, y + 10, 22, 4, C.woodD); P.hl(x + 8, y - 6, 14, C.woodDD); }
+function press(P, x, y) {
+  // a slatted tub full of fruit, a press plate and a big screw with a cross handle, juice running into a bucket
+  P.hl(x - 2, y + 34, 34, 'rgba(40,24,30,0.28)');
+  P.r(x - 2, y + 28, 34, 6, C.woodD); P.hl(x - 2, y + 28, 34, C.woodL);
+  P.r(x + 2, y + 12, 26, 17, C.wood); for (let i = 4; i < 28; i += 4) P.vl(x + i, y + 12, 17, C.woodD); P.hl(x + 2, y + 16, 26, C.stoneDD); P.hl(x + 2, y + 25, 26, C.stoneDD);
+  P.oval(x + 3, y + 9, 24, 7, '#c84a3a'); P.px(x + 8, y + 10, '#f06050'); P.px(x + 16, y + 11, '#e8a030'); P.px(x + 21, y + 10, '#7a2a3a');
+  P.r(x + 1, y + 6, 28, 4, C.woodL); P.hl(x + 1, y + 6, 28, '#e8b878');
+  P.r(x - 2, y - 14, 4, 42, C.woodD); P.r(x + 28, y - 14, 4, 42, C.woodD); P.r(x - 2, y - 16, 34, 4, C.woodD); P.hl(x - 2, y - 16, 34, C.woodL);
+  P.r(x + 13, y - 12, 4, 18, C.stoneDD); for (let j = -11; j < 6; j += 3) P.hl(x + 13, y + j, 4, C.stoneD);
+  P.hl(x + 5, y - 18, 20, C.woodL); P.vl(x + 15, y - 20, 5, C.woodL);
+  P.r(x + 32, y + 22, 6, 3, C.woodD); P.vl(x + 37, y + 25, 4, '#c84a3a'); bucket(P, x + 32, y + 28, '#c84a3a');
+}
 function churn(P, x, y) { P.rr(x, y + 6, 12, 18, C.woodL); P.hl(x, y + 10, 12, C.woodD); P.hl(x, y + 19, 12, C.woodD); P.vl(x + 5, y - 4, 12, C.woodDD); P.r(x + 3, y - 4, 6, 2, C.woodD); }
 function cans(P, x, y, n = 3) { for (let i = 0; i < n; i++) { P.rr(x + i * 10, y + 4, 9, 14, '#c8d4dc'); P.r(x + 2 + i * 10, y, 5, 5, '#a8b4bc'); P.hl(x + i * 10, y + 9, 9, '#9aa6b0'); } }
 function rack(P, c, x, y, k) { P.hl(x, y, 40, C.woodDD); P.vl(x, y, 26, C.woodD); P.vl(x + 39, y, 26, C.woodD); for (let i = 0; i < 3; i++) { P.vl(x + 8 + i * 12, y + 1, 4, '#d8d0c0'); icon(c, k, x + 4 + i * 12, y + 5); } }
@@ -199,172 +211,212 @@ function feedBin(P, c, x, y, k) { P.r(x, y, 20, 14, '#8a9aa8'); P.hl(x, y, 20, '
 function windowBox(P, x, y, w) { P.r(x, y, w, 4, C.woodD); for (let i = 1; i < w; i += 3) { P.px(x + i, y - 1, C.leaf); P.px(x + i, y - 2, i % 2 ? C.pink : C.yellow); } }
 function sign(P, x, y, c = C.woodL) { P.r(x, y, 26, 10, c); P.hl(x, y, 26, shade(c, 0.2)); P.hl(x + 3, y + 4, 20, C.woodDD); P.px(x + 2, y + 2, C.woodDD); P.px(x + 23, y + 2, C.woodDD); }
 function longTable(P, x, y, w) { table(P, x, y, w); P.r(x + 2, y - 6, w - 4, 3, C.woodD); P.r(x + 2, y + 16, w - 4, 3, C.woodD); }
+// ---------- tidy groups (things that belong together) ----------
+const shadow = (P, x, y, w) => { P.hl(x + 1, y, w - 2, 'rgba(40,24,30,0.28)'); P.hl(x + 2, y + 1, w - 4, 'rgba(40,24,30,0.14)'); };
+function wallCabinet(P, x, y, w) { P.r(x, y, w, 15, C.woodD); P.r(x + 1, y + 1, w - 2, 13, C.woodL); for (let i = 0; i < w - 2; i += 11) { P.r(x + 2 + i, y + 2, 9, 11, C.wood); P.px(x + 9 + i, y + 9, C.gold); } P.hl(x, y + 15, w, 'rgba(40,24,30,0.3)'); }
+function sink(P, x, y) { P.r(x, y + 1, 16, 5, '#c8d4dc'); P.r(x + 2, y + 2, 12, 3, '#8aa8b8'); P.vl(x + 8, y - 6, 7, C.stoneD); P.hl(x + 6, y - 6, 5, C.stoneD); }
+function kitchenRun(P, c, x, y, w, items = []) {
+  // a counter along the back wall with a sink and a few things on top
+  counter(P, x, y, w, '#d8c8b0'); shadow(P, x, y + 14, w); sink(P, x + w - 22, y);
+  items.forEach((k, i) => icon(c, k, x + 3 + i * 11, y - 8));
+}
+function coatRack(P, x, y) { P.vl(x + 4, y, 22, C.woodD); P.hl(x + 1, y + 2, 7, C.woodD); P.r(x, y + 3, 4, 8, '#5b8fe0'); P.r(x + 5, y + 3, 4, 6, '#d94545'); P.hl(x + 1, y + 22, 7, C.woodDD); shadow(P, x, y + 23, 9); }
+function trunk(P, x, y) { P.rr(x, y, 22, 13, C.wood); P.r(x, y, 22, 4, C.woodL); P.hl(x, y + 4, 22, C.woodDD); P.r(x + 9, y + 3, 4, 4, C.gold); P.vl(x + 4, y, 13, C.stoneDD); P.vl(x + 17, y, 13, C.stoneDD); shadow(P, x, y + 13, 22); }
+function sackStack(P, c, x, y, k, n = 3) { for (let i = 0; i < n; i++) sack(P, c, x + (i % 2) * 12, y - Math.floor(i / 2) * 9 + (i % 2) * 3, k); shadow(P, x, y + 16, 26); }
+function crateStack(P, x, y) { crate(P, x, y + 10); crate(P, x + 14, y + 10); crate(P, x + 7, y - 3); shadow(P, x, y + 24, 28); }
+function barrelRow(P, x, y, n) { for (let i = 0; i < n; i++) barrel(P, x + i * 13, y); shadow(P, x, y + 15, n * 13); }
+function hayStack(P, x, y) { hay(P, x, y + 12, 26); hay(P, x + 4, y, 22); shadow(P, x, y + 27, 28); }
+function platform(P, x, y, w, h) { P.r(x, y, w, h, C.woodD); P.r(x + 1, y + 1, w - 2, h - 3, C.wood); for (let i = 4; i < w; i += 8) P.vl(x + i, y + 1, h - 3, C.woodD); shadow(P, x, y + h, w); }
+function millstoneSet(P, x, y) {
+  // a pair of grooved stones on a wooden stand, fed by a hopper
+  platform(P, x - 24, y + 4, 48, 18);
+  P.oval(x - 19, y + 2, 38, 14, C.stoneDD); P.oval(x - 18, y, 36, 13, C.stone); P.oval(x - 16, y - 1, 32, 10, C.stoneL);
+  for (let a = 0; a < 6; a++) P.line(x, y + 4, x + Math.round(Math.cos(a) * 14), y + 4 + Math.round(Math.sin(a) * 4), C.stoneD);
+  P.oval(x - 3, y + 2, 6, 4, C.stoneDD);
+  P.line(x - 10, y - 18, x - 4, y - 4, C.woodD); P.line(x + 10, y - 18, x + 4, y - 4, C.woodD); P.hl(x - 11, y - 19, 23, C.woodD); P.r(x - 9, y - 18, 19, 3, '#e0c060');
+  P.r(x + 18, y + 8, 10, 4, C.woodL); P.r(x + 26, y + 10, 4, 8, C.woodD);
+}
+function flourBin(P, c, x, y) { P.r(x, y, 16, 14, C.woodD); P.r(x + 1, y + 1, 14, 4, '#f4efe6'); P.hl(x, y + 5, 16, C.woodDD); icon(c, 'flour', x + 3, y + 5); shadow(P, x, y + 14, 16); }
+function diningSet(P, c, x, y, w = 28, k = 'bread', cl = '#f4efe6') {
+  chair(P, x + 3, y - 9); chair(P, x + w - 11, y - 9);
+  table(P, x, y, w); cloth(P, x, y, w, cl); shadow(P, x, y + 15, w);
+  chair(P, x + 3, y + 13); chair(P, x + w - 11, y + 13); icon(c, k, x + w / 2 - 5, y - 6);
+}
+function fireLounge(P, x, y) { rug(P, x, y, 56, 30, '#c0603a'); armchair(P, x + 2, y + 2, '#5b8fe0'); armchair(P, x + 38, y + 2, '#5fb35a'); P.r(x + 21, y + 12, 14, 7, C.woodD); P.hl(x + 21, y + 12, 14, C.woodL); mugs(P, x + 23, y + 8, 2); }
+function doorPlants(P) { plant(P, RW / 2 - 30, 120); plant(P, RW / 2 + 18, 120); }
+
 // ---------- the rooms ----------
-// Each room: floor, wall, windows ([x, curtain colour]); optional station (where
-// the artisan works), fire / glow spots, a dynamic shelf for storage, beds,
-// animals or fish. draw(P, ctx, o) adds the furniture.
+// Layout in every room: the back wall holds windows, pictures, cabinets and
+// shelves; tall furniture lines the walls; one purpose per area, anchored by
+// a rug; a clear path from the door. station: where the artisan works.
 const recipesOut = (type) => (DEFS[type].recipes || []).map((r) => r.out);
 const ROOMS = {
-  farmhouse: { floor: 'wood', wall: 'cream', windows: [[66, '#d94545'], [150, '#d94545']], fire: [31, 50], draw(P, c) {
-    fireplace(P, 14, 24); P.r(14, 18, 38, 3, C.woodD); candle(P, 18, 11); clock(P, 36, 7); candle(P, 44, 11);
-    painting(P, 104, 8, 18, 13, 0); sconce(P, 94, 10); sconce(P, 128, 10); bookshelf(P, 182, 6, 24);
-    rug(P, 12, 62, 56, 34, '#c0603a'); armchair(P, 14, 58, '#5b8fe0'); armchair(P, 48, 58, '#5fb35a'); table(P, 30, 76, 20); mugs(P, 33, 72, 2);
-    basket(P, c, 54, 84, 'wool'); P.r(36, 96, 10, 4, '#e98aa8');
-    const n = DEFS.farmhouse.houses;
-    for (let i = 0; i < n; i++) { bed(P, 116 + i * 30, 46, ['#5b8fe0', '#d94545', '#5fb35a'][i % 3]); nightstand(P, 135 + i * 30, 52); }
-    rugRound(P, 120, 80, 80, 20, '#a66bd1');
-    stove(P, 12, 112); cupboard(P, 44, 108, 34); table(P, 86, 112, 26); chair(P, 80, 124); chair(P, 108, 124); cloth(P, 86, 112, 26); flowers(P, 94, 102);
-    dresser(P, 186, 110); plantTall(P, 200, 76); plant(P, 156, 120); broom(P, 172, 110); lamp(P, 102, 40);
+  farmhouse: { floor: 'wood', wall: 'cream', windows: [[66, '#d94545'], [158, '#d94545']], fire: [112, 50], draw(P, c) {
+    // kitchen along the back-left wall: cabinets up on the wall, counter, sink and stove below
+    wallCabinet(P, 4, 4, 46); plates(P, 8, 22, 3); stove(P, 4, 34); kitchenRun(P, c, 32, 36, 34, ['bread', 'apple']); utensils(P, 4, 22);
+    // the hearth in the middle of the back wall, with a picture and clock above
+    fireplace(P, 95, 24); P.r(93, 20, 38, 3, C.woodD); candle(P, 96, 13); candle(P, 126, 13); painting(P, 104, 4, 16, 11, 0); clock(P, 82, 8);
+    // the beds along the back-right wall, with a lamp between and a rug at their feet
+    for (let i = 0; i < 3; i++) bed(P, 148 + i * 22, 36, ['#5b8fe0', '#d94545', '#5fb35a'][i]);
+    nightstand(P, 136, 44); bookshelf(P, 196, 4, 24);
+    rug(P, 146, 70, 66, 16, '#a66bd1');
+    // dining on the left, the lounge facing the fire
+    rug(P, 6, 64, 62, 44, '#d8a050'); diningSet(P, c, 18, 82, 36, 'bread');
+    fireLounge(P, 84, 62);
+    // by the door: coat rack, plants, a trunk and a dresser
+    coatRack(P, 72, 110); doorPlants(P); trunk(P, 10, 120); dresser(P, 190, 112); plantTall(P, 170, 102); sconce(P, 140, 10); lamp(P, 178, 92);
   } },
-  cottage: { floor: 'wood', wall: 'sage', windows: [[92, '#e07ba5']], draw(P, c) {
-    painting(P, 40, 8, 16, 12, 1); painting(P, 150, 8, 16, 12, 3, C.woodD); clock(P, 184, 8); sconce(P, 70, 10); sconce(P, 126, 10);
-    bed(P, 150, 44, '#e07ba5'); nightstand(P, 170, 50); bed(P, 186, 44, '#43b3a6');
-    rug(P, 54, 64, 64, 34, '#5b8fe0'); sofa(P, 62, 56, '#e8b23a'); table(P, 74, 78, 24); mugs(P, 78, 74, 2); armchair(P, 104, 80, '#a66bd1');
-    stove(P, 12, 46); cupboard(P, 12, 72, 24); shelf(P, c, 12, 100, 34, ['egg', 'carrot', 'bread']); herbs(P, 12, 36, 3);
-    plantTall(P, 196, 92); plant(P, 132, 120); flowers(P, 150, 118); bookshelf(P, 160, 104, 22); basket(P, c, 40, 124, 'apple');
+  cottage: { floor: 'wood', wall: 'sage', windows: [[60, '#e07ba5'], [140, '#e07ba5']], draw(P, c) {
+    wallCabinet(P, 4, 4, 34); stove(P, 4, 34); kitchenRun(P, c, 32, 36, 26, ['egg']); herbs(P, 82, 2, 3); painting(P, 100, 6, 14, 11, 1); clock(P, 120, 8);
+    bed(P, 170, 36, '#e07ba5'); bed(P, 194, 36, '#43b3a6'); nightstand(P, 160, 44); painting(P, 176, 6, 14, 10, 3, C.woodD);
+    rug(P, 60, 64, 76, 36, '#5b8fe0'); sofa(P, 80, 64, '#e8b23a'); P.r(84, 84, 26, 8, C.woodD); P.hl(84, 84, 26, C.woodL); mugs(P, 88, 80, 2); armchair(P, 116, 80, '#a66bd1');
+    diningSet(P, c, 10, 84, 30, 'carrot', '#f4c8d8');
+    bookshelf(P, 194, 104, 22); coatRack(P, 76, 110); doorPlants(P); basket(P, c, 172, 124, 'apple'); sconce(P, 44, 10); sconce(P, 156, 10);
   } },
-  barn: { floor: 'straw', wall: 'red', windows: [[100, null]], shelf: { x: 66, y: 46, cols: 6, rows: 3 }, draw(P, c) {
-    ladder(P, 30, 2, 50); toolRack(P, 160, 6); lantern(P, 60, 8); lantern(P, 160, 34); P.hl(0, 2, RW, C.woodDD);
-    P.r(64, 44, 96, 70, '#8a5a32'); P.r(66, 46, 92, 66, '#6a3f22');
-    hay(P, 10, 52); hay(P, 10, 66); hay(P, 34, 58); hayPile(P, 176, 112); hay(P, 186, 98);
-    crate(P, 176, 46); crate(P, 192, 50); crate(P, 184, 64); barrel(P, 200, 72);
-    produceCrate(P, c, 20, 108, 'carrot'); produceCrate(P, c, 40, 114, 'potato'); sack(P, c, 62, 118, 'wheat'); bucket(P, 150, 124); broom(P, 140, 104);
+  barn: { floor: 'straw', wall: 'red', windows: [[104, null]], shelf: { x: 66, y: 46, cols: 6, rows: 3 }, draw(P, c) {
+    toolRack(P, 10, 4); lantern(P, 60, 8); lantern(P, 160, 8); ladder(P, 190, 0, 50); P.hl(0, 2, RW, C.woodDD);
+    P.r(64, 44, 96, 70, '#8a5a32'); P.r(66, 46, 92, 66, '#6a3f22'); shadow(P, 64, 114, 96);
+    hayStack(P, 8, 40); hayStack(P, 8, 72); crateStack(P, 172, 52); crateStack(P, 172, 82);
+    for (let i = 0; i < 3; i++) produceCrate(P, c, 8 + i * 18, 120, ['carrot', 'potato', 'corn'][i]);
+    barrelRow(P, 168, 120, 3); doorPlants(P);
   } },
   silo: { floor: 'stone', wall: 'stone', windows: [], shelf: { x: 70, y: 52, cols: 6, rows: 3 }, draw(P, c) {
-    lantern(P, 40, 8); lantern(P, 180, 8); ladder(P, 104, 0, 40); P.r(66, 50, 92, 66, '#6a6058');
-    for (const [x, y, k] of [[12, 44, 'wheat'], [28, 50, 'corn'], [12, 62, 'oats'], [182, 44, 'wheat'], [196, 52, 'corn'], [184, 66, 'rice']]) sack(P, c, x, y, k);
-    hayPile(P, 14, 104); hayPile(P, 176, 110); bucket(P, 40, 124); broom(P, 160, 102); crate(P, 30, 88);
+    lantern(P, 40, 8); lantern(P, 180, 8); ladder(P, 108, 0, 46); P.r(66, 50, 92, 66, '#6a6058'); shadow(P, 66, 116, 92);
+    sackStack(P, c, 8, 50, 'wheat'); sackStack(P, c, 8, 82, 'corn'); sackStack(P, c, 186, 50, 'oats'); sackStack(P, c, 186, 82, 'rice');
+    grainHeap(P, 10, 118); grainHeap(P, 184, 118, '#f4d070'); doorPlants(P);
   } },
-  mill: { floor: 'stone', wall: 'plank', windows: [[160, null]], station: [100, 70], draw(P, c) {
-    gear(P, 40, 18, 11); gear(P, 62, 22, 7); lantern(P, 130, 6); lantern(P, 30, 40);
-    P.r(98, 8, 4, 58, C.woodD); P.vl(99, 8, 58, C.woodL); P.hl(40, 18, 60, C.woodD); P.hl(40, 19, 60, C.woodDD);
-    P.line(88, 40, 94, 54, C.woodD); P.line(112, 40, 106, 54, C.woodD); P.hl(88, 40, 25, C.woodD); P.r(90, 41, 21, 3, '#e0c060');
-    P.r(120, 74, 20, 14, C.woodD); P.r(121, 75, 18, 10, '#f4efe6'); P.hl(121, 75, 18, '#ffffff');
-    for (const [x, y, k] of [[14, 44, 'wheat'], [30, 50, 'wheat'], [14, 60, 'wheat'], [180, 44, 'flour'], [196, 50, 'flour'], [186, 62, 'flour'], [186, 100, 'cornmeal'], [170, 108, 'sugar']]) sack(P, c, x, y, k);
-    hay(P, 12, 104); crate(P, 34, 110); barrel(P, 150, 100); workbench(P, c, 50, 112, 34); broom(P, 140, 96); bucket(P, 200, 124); wallShelf(P, c, 150, 10, 34, ['flour', 'cornmeal', 'sugar']);
-    grainHeap(P, 40, 80); sack(P, c, 64, 76, 'corn'); grainHeap(P, 150, 76, '#f4efe6'); table(P, 96, 118, 30); P.r(102, 112, 10, 6, C.stoneD); P.hl(100, 112, 14, C.goldD); basket(P, c, 118, 112, 'wheat');
+  mill: { floor: 'stone', wall: 'plank', windows: [[176, null]], station: [100, 66], draw(P, c) {
+    // the gear train on the wall drives the shaft down to the millstones
+    gear(P, 40, 16, 11); gear(P, 62, 22, 7); P.hl(40, 16, 72, C.woodD); P.hl(40, 17, 72, C.woodDD); P.r(110, 8, 4, 40, C.woodD); P.vl(111, 8, 40, C.woodL);
+    lantern(P, 140, 8); lantern(P, 24, 40); wallShelf(P, c, 136, 16, 34, ['flour', 'cornmeal', 'sugar']);
+    millstoneSet(P, 112, 64); flourBin(P, c, 140, 72);
+    sackStack(P, c, 8, 46, 'wheat'); sackStack(P, c, 8, 78, 'wheat'); grainHeap(P, 34, 70);
+    sackStack(P, c, 186, 46, 'flour'); sackStack(P, c, 186, 78, 'flour');
+    workbench(P, c, 8, 116, 40); barrelRow(P, 170, 120, 3); doorPlants(P);
   } },
-  bakery: { floor: 'tile', wall: 'cream', windows: [[150, '#f08bb0']], station: [40, 80], glow: [24, 50, 18, 12], draw(P, c) {
-    oven(P, 18, 38); cupboard(P, 54, 4, 60); plates(P, 58, 22, 4); knives(P, 92, 22);
-    counter(P, 54, 40, 70, '#d8c8b0'); cuttingBoard(P, c, 60, 38, 'bread'); mixingBowl(P, 86, 36); mixingBowl(P, 102, 37, C.red); P.r(116, 38, 6, 4, C.woodL);
-    wallShelf(P, c, 130, 16, 46, ['bread', 'cornbread', 'muffin', 'cake']); sack(P, c, 186, 44, 'flour'); sack(P, c, 200, 48, 'sugar'); basket(P, c, 172, 50, 'egg');
-    counter(P, 54, 92, 110); glassCase(P, c, 62, 78, 70, recipesOut('bakery').slice(0, 6)); register(P, 140, 80); chalkboard(P, 190, 4, 24, 18);
-    cafeTable(P, c, 26, 112, 'muffin'); cafeTable(P, c, 182, 112, 'applepie'); plantTall(P, 4, 80); plant(P, 206, 86); flowers(P, 150, 120);
-    painting(P, 24, 6, 16, 12, 1); sconce(P, 46, 8); sconce(P, 126, 8); pendant(P, 80, 56); pendant(P, 118, 56, '#c0603a');
+  bakery: { floor: 'tile', wall: 'cream', windows: [[164, '#f08bb0']], station: [40, 80], glow: [24, 50, 18, 12], draw(P, c) {
+    oven(P, 18, 38); wallCabinet(P, 54, 4, 56); knives(P, 116, 22); wallShelf(P, c, 120, 8, 34, ['bread', 'cornbread', 'muffin']);
+    kitchenRun(P, c, 54, 40, 76); cuttingBoard(P, c, 60, 38, 'bread'); mixingBowl(P, 84, 34); mixingBowl(P, 98, 35, C.red);
+    sackStack(P, c, 188, 44, 'flour', 2); basket(P, c, 172, 48, 'egg'); chalkboard(P, 192, 4, 22, 16);
+    counter(P, 54, 92, 112); shadow(P, 54, 106, 112); glassCase(P, c, 62, 78, 72, recipesOut('bakery').slice(0, 6)); register(P, 142, 80); flowers(P, 160, 82);
+    cafeTable(P, c, 26, 112, 'muffin'); cafeTable(P, c, 184, 112, 'applepie'); plantTall(P, 4, 74); plantTall(P, 204, 74);
+    painting(P, 26, 6, 16, 12, 1); sconce(P, 46, 8); pendant(P, 84, 58); pendant(P, 128, 58, '#c0603a');
   } },
-  press: { floor: 'wood', wall: 'plank', windows: [[120, null]], station: [90, 66], draw(P, c) {
-    press(P, 80, 40); barrel(P, 20, 48); barrel(P, 36, 52); barrel(P, 20, 66); produceCrate(P, c, 176, 46, 'apple'); produceCrate(P, c, 194, 52, 'orange'); produceCrate(P, c, 184, 66, 'tomato');
-    wallShelf(P, c, 152, 10, 56, ['applejuice', 'carrotjuice', 'oil', 'sauce', 'orangejuice']); lantern(P, 40, 8); lantern(P, 110, 6); painting(P, 66, 8, 16, 12, 3, C.woodD);
-    table(P, 120, 100, 40); for (let i = 0; i < 4; i++) icon(c, ['applejuice', 'wmjuice', 'peachjuice', 'sunjuice'][i], 122 + i * 9, 92);
-    sack(P, c, 22, 104, 'apple'); sack(P, c, 38, 110, 'sunflower'); bucket(P, 66, 120); broom(P, 196, 100); stool(P, 166, 120);
-    vat(P, 30, 84, '#9a3a5a'); rugRound(P, 100, 116, 46, 18, '#7a2a3a'); bottleCrate(P, 150, 70, '#e8a030'); bottleCrate(P, 168, 88, '#c84a3a'); shelf(P, c, 60, 100, 34, ['apple', 'orange', 'tomato']); sconce(P, 140, 10);
+  press: { floor: 'wood', wall: 'plank', windows: [[104, null]], station: [100, 64], draw(P, c) {
+    press(P, 96, 50); wallShelf(P, c, 140, 10, 56, ['applejuice', 'carrotjuice', 'oil', 'sauce', 'orangejuice']); lantern(P, 40, 8); lantern(P, 176, 34); painting(P, 60, 8, 16, 12, 3, C.woodD);
+    barrelRow(P, 8, 42, 3); barrelRow(P, 8, 60, 3); vat(P, 60, 88, '#9a3a5a');
+    for (let i = 0; i < 3; i++) produceCrate(P, c, 160 + i * 18, 48, ['apple', 'orange', 'tomato'][i]);
+    table(P, 150, 88, 54); shadow(P, 150, 103, 54); for (let i = 0; i < 5; i++) icon(c, ['applejuice', 'wmjuice', 'peachjuice', 'sunjuice', 'orangejuice'][i], 152 + i * 10, 80);
+    sackStack(P, c, 8, 112, 'apple'); bottleCrate(P, 186, 120, '#e8a030'); doorPlants(P);
   } },
-  kitchen: { floor: 'tile', wall: 'cream', windows: [[60, '#5fb35a']], station: [120, 64], draw(P, c) {
-    stove(P, 106, 40); pot(P, 109, 37, '#d94570'); pot(P, 121, 37, '#4d63c9'); utensils(P, 100, 22); herbs(P, 150, 2, 4);
-    jars(P, c, 150, 16, ['strawjam', 'bluejam', 'cherryjam', 'peachjam', 'plumjam']); cupboard(P, 14, 30, 34);
-    counter(P, 14, 96, 76); jars(P, c, 18, 82, ['rasjam', 'cransauce', 'wmjelly', 'melonjelly']); cuttingBoard(P, c, 60, 94, 'strawberry');
-    basket(P, c, 150, 50, 'strawberry'); basket(P, c, 166, 54, 'blueberry'); basket(P, c, 182, 50, 'cherry'); sack(P, c, 196, 100, 'sugar');
-    table(P, 120, 104, 40); chair(P, 114, 116); chair(P, 150, 116); cloth(P, 120, 104, 40, '#f4c8d8'); flowers(P, 134, 96);
-    plantTall(P, 200, 64); painting(P, 86, 6, 12, 10, 1); clock(P, 196, 8); sconce(P, 50, 10);
-    island(P, c, 30, 58, 60, ['strawberry', 'sugar', 'blueberry', 'cherry', 'raspberry']); mixingBowl(P, 66, 52, C.pink); pendant(P, 56, 40); rug(P, 104, 124, 40, 12, '#5fb35a'); stool(P, 34, 78); stool(P, 70, 78);
+  kitchen: { floor: 'tile', wall: 'cream', windows: [[34, '#5fb35a']], station: [120, 64], draw(P, c) {
+    wallCabinet(P, 60, 4, 40); utensils(P, 104, 6); herbs(P, 150, 2, 4); jars(P, c, 150, 18, ['strawjam', 'bluejam', 'cherryjam', 'peachjam', 'plumjam']);
+    kitchenRun(P, c, 60, 36, 44, ['sugar', 'strawberry']); stove(P, 106, 34); pot(P, 109, 31, '#d94570'); pot(P, 121, 31, '#4d63c9');
+    island(P, c, 70, 76, 64, ['strawberry', 'blueberry', 'cherry', 'raspberry', 'sugar']); pendant(P, 98, 56); stool(P, 76, 98); stool(P, 118, 98);
+    for (let i = 0; i < 3; i++) basket(P, c, 152 + i * 18, 52, ['strawberry', 'blueberry', 'cherry'][i]);
+    diningSet(P, c, 166, 100, 40, 'bluejam', '#f4c8d8'); jars(P, c, 8, 46, ['rasjam', 'cransauce', 'wmjelly']); sackStack(P, c, 8, 76, 'sugar');
+    plantTall(P, 4, 104); clock(P, 196, 8); doorPlants(P);
   } },
   dairy: { floor: 'tile', wall: 'teal', windows: [[100, '#ffffff']], station: [60, 70], draw(P, c) {
-    churn(P, 50, 46); churn(P, 70, 50); cans(P, 160, 44, 4); rack(P, c, 150, 92, 'cheese'); rack(P, c, 150, 70, 'smokedcheese');
-    wallShelf(P, c, 14, 10, 56, ['butter', 'cheese', 'icecream', 'yogurt', 'milk']); bucket(P, 30, 70, '#fbf8ef'); bucket(P, 12, 74, '#fbf8ef');
-    table(P, 90, 100, 36); for (let i = 0; i < 3; i++) icon(c, ['cheese', 'butter', 'yogurt'][i], 93 + i * 11, 92);
-    counter(P, 14, 116, 60, '#c8d4dc'); icon(c, 'icecream', 24, 108); icon(c, 'icecream', 40, 108); stool(P, 30, 130); stool(P, 50, 130);
-    painting(P, 130, 8, 16, 12, 0); clock(P, 70, 8); plant(P, 200, 118); sconce(P, 160, 10); sconce(P, 40, 30); pendant(P, 104, 70, '#e8e0d0');
-    cheeseWheels(P, 120, 70); cheeseWheels(P, 186, 126); bottleCrate(P, 90, 124, '#fbf8ef'); bench(P, 14, 92, 30); cans(P, 110, 44, 2); rug(P, 80, 76, 36, 14, '#43b3a6');
+    wallShelf(P, c, 8, 10, 56, ['butter', 'cheese', 'icecream', 'yogurt', 'milk']); painting(P, 136, 8, 16, 12, 0); clock(P, 76, 8); sconce(P, 160, 10);
+    churn(P, 42, 44); churn(P, 60, 46); cans(P, 150, 42, 4); shadow(P, 150, 60, 40);
+    rack(P, c, 176, 70, 'cheese'); rack(P, c, 176, 96, 'smokedcheese'); cheeseWheels(P, 150, 124);
+    counter(P, 8, 100, 60, '#c8d4dc'); shadow(P, 8, 114, 60); icon(c, 'icecream', 16, 92); icon(c, 'icecream', 30, 92); icon(c, 'yogurt', 44, 92); stool(P, 16, 118); stool(P, 40, 118);
+    table(P, 86, 82, 40); shadow(P, 86, 97, 40); for (let i = 0; i < 3; i++) icon(c, ['cheese', 'butter', 'milk'][i], 90 + i * 12, 74); pendant(P, 102, 60, '#e8e0d0');
+    bucket(P, 8, 60, '#fbf8ef'); bucket(P, 20, 64, '#fbf8ef'); doorPlants(P);
   } },
   brewery: { floor: 'stone', wall: 'brick', windows: [], station: [96, 70], draw(P, c) {
-    tank(P, 14, 40); tank(P, 40, 40); tank(P, 66, 46, 28); pipes(P, 10, 34, 80);
-    taps(P, 120, 86, 4); mugs(P, 126, 92, 4); stool(P, 126, 112); stool(P, 146, 112); stool(P, 166, 112);
-    barrel(P, 190, 44); barrel(P, 204, 50); barrel(P, 196, 62); wallShelf(P, c, 120, 10, 60, ['beer', 'cider', 'mead', 'stout', 'beer']);
-    chalkboard(P, 96, 4, 20, 16); lantern(P, 186, 6); lantern(P, 56, 6); sack(P, c, 14, 90, 'hops'); sack(P, c, 30, 96, 'wheat'); sack(P, c, 14, 108, 'oats');
-    table(P, 40, 118, 30); chair(P, 34, 130); chair(P, 66, 130); mugs(P, 46, 114, 2); painting(P, 164, 8, 16, 12, 4, C.woodD); plant(P, 200, 118);
-    longTable(P, 140, 60, 40); mugs(P, 146, 56, 4); barrel(P, 70, 92); barrel(P, 82, 98); rug(P, 120, 110, 70, 10, '#8a3a2a'); pendant(P, 150, 40, '#c87a3a'); pendant(P, 40, 70, '#c87a3a');
+    pipes(P, 8, 30, 86); tank(P, 10, 38); tank(P, 36, 38); tank(P, 62, 38); chalkboard(P, 104, 4, 20, 16); lantern(P, 56, 6); lantern(P, 186, 6);
+    wallShelf(P, c, 132, 8, 56, ['beer', 'cider', 'mead', 'stout', 'beer']);
+    taps(P, 130, 40, 4); mugs(P, 136, 46, 4); stool(P, 138, 66); stool(P, 158, 66); stool(P, 178, 66);
+    rugRound(P, 120, 86, 70, 22, '#8a3a2a'); barrelRow(P, 182, 110, 2);
+    diningSet(P, c, 30, 96, 44, 'beer', '#e8d8b0'); sackStack(P, c, 8, 112, 'hops'); pendant(P, 52, 76, '#c87a3a'); pendant(P, 160, 26, '#c87a3a'); doorPlants(P);
   } },
-  winery: { floor: 'cellar', wall: 'stone', windows: [], station: [110, 76], draw(P, c) {
-    barrelRack(P, 10, 40, 4); bottleRack(P, 150, 40, '#7a1f3d'); bottleRack(P, 186, 40, '#c8b048');
-    table(P, 100, 96, 34); for (let i = 0; i < 3; i++) icon(c, ['wine', 'plumwine', 'raswine'][i], 104 + i * 10, 88); candle(P, 128, 88);
-    lantern(P, 40, 6); lantern(P, 130, 6); lantern(P, 196, 6); painting(P, 86, 8, 18, 12, 0, C.goldD);
-    crate(P, 30, 104); produceCrate(P, c, 48, 110, 'grapes'); produceCrate(P, c, 68, 116, 'plum'); barrel(P, 180, 100); barrel(P, 196, 106);
-    armchair(P, 150, 112, '#7a1f3d'); rugRound(P, 90, 118, 50, 16, '#7a1f3d');
-    vat(P, 70, 70, '#5a2a6a'); bottleCrate(P, 30, 76, '#7a1f3d'); bottleCrate(P, 150, 78, '#c8b048'); table(P, 170, 74, 30); candle(P, 176, 67); icon(c, 'wine', 186, 66); chair(P, 200, 86);
+  winery: { floor: 'cellar', wall: 'stone', windows: [], station: [110, 70], draw(P, c) {
+    barrelRack(P, 8, 38, 4); bottleRack(P, 150, 38, '#7a1f3d'); bottleRack(P, 186, 38, '#c8b048'); painting(P, 96, 6, 18, 12, 0, C.goldD);
+    lantern(P, 40, 6); lantern(P, 130, 6); lantern(P, 196, 6);
+    vat(P, 20, 84, '#5a2a6a'); for (let i = 0; i < 2; i++) produceCrate(P, c, 56 + i * 18, 88, ['grapes', 'plum'][i]);
+    rugRound(P, 134, 84, 72, 26, '#7a1f3d'); armchair(P, 140, 84, '#7a1f3d'); table(P, 160, 92, 26); candle(P, 166, 85); icon(c, 'wine', 174, 84); armchair(P, 188, 86, '#7a1f3d');
+    barrelRow(P, 8, 120, 3); barrelRow(P, 176, 120, 3); doorPlants(P);
   } },
   loom: { floor: 'wood', wall: 'pastel', windows: [[150, '#a66bd1']], station: [70, 70], draw(P, c) {
-    loomFrame(P, 50, 40); spinningWheel(P, 14, 46); wallShelf(P, c, 110, 10, 44, ['cloth', 'yarn', 'sachet', 'wool']);
-    sack(P, c, 180, 46, 'cotton'); sack(P, c, 196, 52, 'wool'); basket(P, c, 176, 70, 'yarn'); basket(P, c, 196, 74, 'lavender');
-    rug(P, 104, 90, 70, 30, '#a66bd1'); armchair(P, 112, 84, '#e98aa8'); table(P, 140, 96, 22); icon(c, 'cloth', 144, 88); lamp(P, 166, 84);
-    bookshelf(P, 14, 104, 22); plantTall(P, 196, 100); painting(P, 20, 8, 14, 11, 1); painting(P, 86, 8, 14, 11, 2); sconce(P, 60, 10);
-    mannequin(P, 104, 44); P.oval(44, 92, 40, 16, '#f2ede2'); P.oval(50, 90, 28, 10, '#ffffff'); basket(P, c, 90, 112, 'cotton'); chair(P, 40, 118); shelf(P, c, 150, 120, 34, ['yarn', 'cloth', 'yarn']); pendant(P, 140, 60, '#a66bd1');
+    painting(P, 20, 8, 14, 11, 1); painting(P, 96, 8, 14, 11, 2); sconce(P, 60, 10); wallShelf(P, c, 112, 10, 34, ['cloth', 'yarn', 'sachet']);
+    loomFrame(P, 50, 38); spinningWheel(P, 12, 44); mannequin(P, 108, 40);
+    sackStack(P, c, 186, 44, 'wool', 2); basket(P, c, 170, 52, 'cotton');
+    rug(P, 104, 84, 76, 30, '#a66bd1'); armchair(P, 112, 84, '#e98aa8'); table(P, 140, 92, 22); icon(c, 'cloth', 144, 84); lamp(P, 166, 82);
+    bookshelf(P, 8, 100, 22); for (let i = 0; i < 2; i++) basket(P, c, 186 + i * 16, 118, ['yarn', 'lavender'][i]); doorPlants(P);
   } },
-  pickler: { floor: 'plank', wall: 'plank', windows: [[100, null]], station: [100, 72], draw(P, c) {
-    barrel(P, 16, 46); barrel(P, 32, 50); barrel(P, 16, 64); barrel(P, 184, 46); barrel(P, 200, 52);
-    jars(P, c, 132, 10, ['pickles', 'sauerkraut', 'pickledon', 'pickledpep', 'vinegar']); herbs(P, 20, 2, 4);
-    counter(P, 70, 96, 64); jars(P, c, 74, 82, ['cucumber', 'cabbage', 'onion', 'bellpepper']); cuttingBoard(P, c, 110, 94, 'cucumber');
-    produceCrate(P, c, 160, 104, 'cucumber'); produceCrate(P, c, 180, 110, 'cabbage'); sack(P, c, 20, 104, 'onion'); bucket(P, 40, 120);
-    lantern(P, 70, 6); lantern(P, 170, 34); stool(P, 140, 120); plant(P, 200, 118); painting(P, 60, 8, 12, 10, 0, C.woodD);
-    for (let i = 0; i < 4; i++) crock(P, 50 + i * 15, 52 + (i % 2) * 4, ['#a88a6a', '#8a9a7a', '#b89a7a', '#7a8a9a'][i]); longTable(P, 140, 60, 40); jars(P, c, 142, 48, ['pickles', 'vinegar', 'sauerkraut']);
-    rug(P, 60, 120, 44, 12, '#6a9a3a'); produceCrate(P, c, 40, 82, 'onion'); bucket(P, 200, 80); pendant(P, 100, 70, '#6a9a3a');
+  pickler: { floor: 'plank', wall: 'plank', windows: [[60, null]], station: [100, 66], draw(P, c) {
+    herbs(P, 10, 2, 4); jars(P, c, 132, 10, ['pickles', 'sauerkraut', 'pickledon', 'pickledpep', 'vinegar']); lantern(P, 104, 6); painting(P, 90, 8, 12, 10, 0, C.woodD);
+    barrelRow(P, 8, 42, 3); for (let i = 0; i < 4; i++) crock(P, 140 + i * 16, 44, ['#a88a6a', '#8a9a7a', '#b89a7a', '#7a8a9a'][i]);
+    counter(P, 70, 80, 70); shadow(P, 70, 94, 70); jars(P, c, 74, 66, ['cucumber', 'cabbage', 'onion', 'bellpepper']); cuttingBoard(P, c, 116, 78, 'cucumber'); pendant(P, 100, 54, '#6a9a3a');
+    rug(P, 64, 104, 84, 12, '#6a9a3a');
+    for (let i = 0; i < 3; i++) produceCrate(P, c, 8 + i * 18, 118, ['cucumber', 'cabbage', 'onion'][i]); barrelRow(P, 176, 118, 3); doorPlants(P);
   } },
-  cookhouse: { floor: 'tile', wall: 'brick', windows: [[150, '#d94545']], station: [60, 66], fire: [47, 50], draw(P, c) {
-    fireplace(P, 30, 24); pot(P, 40, 44, '#e0a040'); utensils(P, 76, 18); herbs(P, 76, 2, 4); cupboard(P, 170, 4, 36);
-    wallShelf(P, c, 100, 10, 50, ['veggiesoup', 'beanstew', 'oatmeal', 'fishstew']);
-    table(P, 110, 76, 40); chair(P, 104, 88); chair(P, 146, 88); cloth(P, 110, 76, 40, '#f4efe6'); candle(P, 128, 69);
-    table(P, 160, 108, 34); chair(P, 154, 120); chair(P, 190, 120); icon(c, 'friedrice', 168, 100); icon(c, 'bakedpotato', 182, 100);
-    counter(P, 14, 92, 50); cuttingBoard(P, c, 20, 90, 'carrot'); mixingBowl(P, 44, 86); produceCrate(P, c, 14, 116, 'potato'); produceCrate(P, c, 34, 120, 'onion');
-    plantTall(P, 200, 60); sconce(P, 96, 30);
-    rug(P, 104, 70, 56, 30, '#c0603a'); chalkboard(P, 120, 2, 24, 14); pendant(P, 126, 54, '#d94545'); pendant(P, 174, 86, '#d94545'); cafeTable(P, c, 84, 122, 'veggiesoup'); flowers(P, 128, 76); bench(P, 66, 106, 28); basket(P, c, 196, 90, 'potato');
+  cookhouse: { floor: 'tile', wall: 'brick', windows: [[174, '#d94545']], station: [60, 66], fire: [47, 50], draw(P, c) {
+    fireplace(P, 30, 24); pot(P, 40, 44, '#e0a040'); utensils(P, 76, 18); herbs(P, 76, 2, 4); chalkboard(P, 120, 4, 24, 14);
+    kitchenRun(P, c, 76, 36, 44, ['carrot', 'onion']); wallShelf(P, c, 132, 18, 34, ['veggiesoup', 'beanstew', 'fishstew']);
+    rug(P, 96, 64, 76, 50, '#c0603a'); diningSet(P, c, 104, 78, 30, 'veggiesoup'); diningSet(P, c, 140, 96, 30, 'bakedpotato'); pendant(P, 118, 50, '#d94545'); pendant(P, 154, 70, '#d94545');
+    for (let i = 0; i < 2; i++) produceCrate(P, c, 8 + i * 18, 70, ['potato', 'onion'][i]); sackStack(P, c, 8, 100, 'rice');
+    plantTall(P, 202, 60); bench(P, 180, 124, 34); doorPlants(P); sconce(P, 96, 30);
   } },
   sweets: { floor: 'pastel', wall: 'pastel', windows: [[30, '#f4c030']], station: [150, 70], draw(P, c) {
-    bunting(P, 4, 2, RW - 8); fairyLights(P, 4, 26, RW - 8); counter(P, 70, 92, 100, '#f4c8d8'); candyJars(P, 80, 78); register(P, 150, 80); lollipops(P, 52, 88);
-    wallShelf(P, c, 110, 12, 64, ['candy', 'toffee', 'honeydrops', 'soda', 'maplecandy', 'mintcandy']); chalkboard(P, 186, 6, 24, 18);
-    cafeTable(P, c, 26, 112, 'soda'); cafeTable(P, c, 186, 112, 'candy'); plantTall(P, 196, 60); flowers(P, 14, 46); flowers(P, 60, 46);
-    shelf(P, c, 14, 60, 40, ['candy', 'toffee', 'honeydrops']); painting(P, 60, 8, 16, 12, 4); sconce(P, 98, 10); sconce(P, 180, 30);
-    gumball(P, 30, 84); gumball(P, 176, 84); rugRound(P, 80, 112, 64, 20, '#f06090'); barrel(P, 14, 100); P.oval(15, 98, 10, 4, '#f4c030'); P.oval(170, 116, 10, 4, '#a070e0'); basket(P, c, 160, 118, 'candy'); pendant(P, 110, 60, '#f06090');
+    bunting(P, 4, 2, RW - 8); fairyLights(P, 4, 26, RW - 8); wallShelf(P, c, 112, 10, 64, ['candy', 'toffee', 'honeydrops', 'soda', 'maplecandy', 'mintcandy']); chalkboard(P, 186, 4, 24, 18); painting(P, 66, 8, 16, 12, 4);
+    gumball(P, 10, 40); gumball(P, 26, 40); shelf(P, c, 46, 44, 40, ['candy', 'toffee', 'honeydrops']);
+    counter(P, 70, 88, 100, '#f4c8d8'); shadow(P, 70, 102, 100); candyJars(P, 80, 74); register(P, 150, 76); lollipops(P, 52, 82); pendant(P, 110, 56, '#f06090');
+    rugRound(P, 76, 110, 72, 18, '#f06090'); cafeTable(P, c, 26, 114, 'soda'); cafeTable(P, c, 186, 114, 'candy'); plantTall(P, 200, 48); barrel(P, 8, 72); P.oval(9, 70, 10, 4, '#f4c030');
   } },
-  smokehouse: { floor: 'plank', wall: 'dark', windows: [], station: [100, 76], glow: [100, 104, 22, 6], draw(P, c) {
-    rack(P, c, 20, 40, 'fish'); rack(P, c, 70, 40, 'fish'); rack(P, c, 150, 40, 'smokedfish'); P.r(96, 100, 30, 12, '#3a2a28'); P.r(100, 104, 22, 6, '#e8702a'); light(111, 106, 36, 'fire');
-    barrel(P, 190, 96); barrel(P, 200, 110); P.r(14, 100, 30, 26, C.woodDD); for (let i = 0; i < 4; i++) P.hl(16, 104 + i * 6, 26, C.wood);
-    lantern(P, 60, 6); lantern(P, 140, 6); bucket(P, 160, 120); net(P, 176, 6); toolRack(P, 10, 6); wallShelf(P, c, 100, 14, 34, ['smokedfish', 'smokedcheese', 'fish']);
-    firewood(P, 54, 120); chopBlock(P, 150, 96); rack(P, c, 20, 70, 'smokedfish'); table(P, 120, 124, 36); icon(c, 'smokedfish', 124, 116); icon(c, 'smokedcheese', 138, 116); crock(P, 180, 70); sack(P, c, 196, 70, 'fish'); lantern(P, 196, 34); basket(P, c, 74, 70, 'fish');
+  smokehouse: { floor: 'plank', wall: 'dark', windows: [], station: [100, 70], glow: [100, 104, 22, 6], draw(P, c) {
+    toolRack(P, 10, 6); net(P, 176, 6); lantern(P, 60, 6); lantern(P, 140, 6); wallShelf(P, c, 96, 14, 34, ['smokedfish', 'smokedcheese', 'fish']);
+    rack(P, c, 12, 38, 'fish'); rack(P, c, 60, 38, 'fish'); rack(P, c, 150, 38, 'smokedfish');
+    P.r(92, 96, 38, 18, C.stoneDD); P.r(96, 100, 30, 12, '#3a2a28'); P.r(100, 104, 22, 6, '#e8702a'); light(111, 106, 36, 'fire'); shadow(P, 92, 114, 38);
+    firewood(P, 52, 118); chopBlock(P, 150, 104); table(P, 164, 80, 44); shadow(P, 164, 95, 44); icon(c, 'smokedfish', 168, 72); icon(c, 'smokedcheese', 182, 72); icon(c, 'smokedfish', 196, 72);
+    barrelRow(P, 8, 84, 2); sackStack(P, c, 186, 112, 'fish', 2); lantern(P, 196, 34);
   } },
-  teahouse: { floor: 'tatami', wall: 'cream', windows: [[40, '#9ab040'], [170, '#9ab040']], station: [110, 66], draw(P, c) {
-    teaCounter(P, 80, 80); wallShelf(P, c, 90, 10, 50, ['tea', 'chai', 'coffee', 'latte']); paperLantern(P, 70, 6); paperLantern(P, 150, 8, '#f4c542'); paperLantern(P, 30, 40, '#e07ba5'); paperLantern(P, 186, 70, '#5fb35a');
-    plantTall(P, 4, 96); plantTall(P, 200, 96); rug(P, 16, 50, 44, 30, '#9ab040'); P.r(26, 58, 24, 10, C.woodD); P.hl(26, 58, 24, C.woodL); mugs(P, 30, 54, 3);
-    cushion(P, 18, 72, '#e07ba5'); cushion(P, 44, 72, '#5b8fe0'); sack(P, c, 186, 50, 'tealeaf'); sack(P, c, 172, 56, 'coffeebean');
-    table(P, 130, 112, 40); cushion(P, 128, 126, '#e8b23a'); cushion(P, 156, 126, '#43b3a6'); icon(c, 'tea', 140, 104); icon(c, 'latte', 154, 104);
-    painting(P, 112, 8, 12, 14, 0, C.woodD); flowers(P, 60, 120);
-    P.r(20, 96, 40, 4, C.woodD); P.hl(20, 96, 40, C.woodL); mugs(P, 26, 92, 2); cushion(P, 18, 104, '#a66bd1'); cushion(P, 46, 104, '#f4c542'); plant(P, 170, 52); bookshelf(P, 186, 6, 20); flowers(P, 100, 120);
+  teahouse: { floor: 'tatami', wall: 'cream', windows: [[40, '#9ab040'], [170, '#9ab040']], station: [110, 62], draw(P, c) {
+    paperLantern(P, 70, 6); paperLantern(P, 150, 8, '#f4c542'); wallShelf(P, c, 90, 10, 50, ['tea', 'chai', 'coffee', 'latte']); painting(P, 112, 4, 12, 14, 0, C.woodD);
+    teaCounter(P, 80, 76); shadow(P, 80, 90, 60); sackStack(P, c, 186, 44, 'tealeaf', 2); sackStack(P, c, 8, 44, 'coffeebean', 2);
+    rug(P, 10, 96, 56, 30, '#9ab040'); P.r(24, 106, 28, 8, C.woodD); P.hl(24, 106, 28, C.woodL); mugs(P, 28, 102, 3); cushion(P, 12, 114, '#e07ba5'); cushion(P, 52, 114, '#5b8fe0');
+    rug(P, 158, 96, 56, 30, '#e8b23a'); P.r(172, 106, 28, 8, C.woodD); P.hl(172, 106, 28, C.woodL); icon(c, 'tea', 176, 98); icon(c, 'latte', 188, 98); cushion(P, 160, 114, '#43b3a6'); cushion(P, 200, 114, '#a66bd1');
+    plantTall(P, 4, 60); plantTall(P, 204, 60); lamp(P, 66, 100); lamp(P, 150, 100); doorPlants(P);
   } },
   coop: { floor: 'straw', wall: 'plank', windows: [[110, null]], animals: 'chicken', draw(P, c) {
-    for (let i = 0; i < 4; i++) nest(P, c, 14 + i * 22, 38); perch(P, 136, 38, 70); perch(P, 146, 48, 50); lantern(P, 120, 6);
-    trough(P, 150, 124, 50); waterTrough(P, 20, 126, 30); hayPile(P, 176, 96); lantern(P, 40, 30); lantern(P, 196, 30); basket(P, c, 196, 64, 'egg'); sack(P, c, 6, 98, 'wheat'); ladder(P, 96, 0, 34);
-    windowBox(P, 106, 23, 26); sign(P, 150, 8); feedBin(P, c, 6, 64, 'wheat'); hay(P, 196, 80, 18); basket(P, c, 6, 118, 'egg'); flowers(P, 80, 122); broom(P, 204, 104); P.line(116, 56, 136, 40, C.woodL); for (let i = 0; i < 4; i++) P.hl(118 + i * 5, 54 - i * 4, 4, C.woodD);
+    // nesting boxes along the back wall, perches on the right, feed and water by the door
+    for (let i = 0; i < 4; i++) nest(P, c, 8 + i * 22, 38); perch(P, 142, 38, 70); perch(P, 152, 48, 50); sign(P, 150, 8); windowBox(P, 106, 23, 26);
+    lantern(P, 60, 8); lantern(P, 196, 8); feedBin(P, c, 6, 70, 'wheat'); hayStack(P, 190, 70);
+    trough(P, 140, 126, 60); waterTrough(P, 24, 126, 34); basket(P, c, 6, 112, 'egg');
+    // a ramp up to the perches, egg baskets hung by the door, a feed sack beside the bin
+    P.line(130, 62, 146, 46, C.woodL); P.line(131, 62, 147, 46, C.woodD); for (let i = 0; i < 4; i++) P.hl(132 + i * 4, 59 - i * 4, 3, C.woodDD);
+    for (let i = 0; i < 2; i++) { P.vl(30 + i * 14, 18, 4, C.stoneDD); P.rr(26 + i * 14, 22, 10, 7, '#c9944a'); icon(c, 'egg', 27 + i * 14, 18); }
+    sack(P, c, 26, 72, 'wheat'); hay(P, 190, 102, 18);
   } },
   cowshed: { floor: 'straw', wall: 'red', windows: [[100, null]], animals: 'cow', draw(P, c) {
-    for (let i = 0; i < 5; i++) stall(P, 24 + i * 44, 36); trough(P, 14, 36, 190); lantern(P, 60, 8); lantern(P, 160, 8); lantern(P, 110, 8); toolRack(P, 120, 4);
-    hay(P, 186, 118); hayPile(P, 8, 116); bucket(P, 200, 100, '#fbf8ef'); bucket(P, 40, 128, '#fbf8ef'); cans(P, 70, 124, 2);
-    feedBin(P, c, 6, 70, 'corn'); hay(P, 6, 88, 18); sign(P, 20, 10, '#c49a62'); windowBox(P, 96, 23, 26); stool(P, 150, 126); broom(P, 204, 70); P.r(170, 10, 14, 10, C.woodD); P.oval(172, 12, 10, 6, C.stoneD);
+    for (let i = 0; i < 5; i++) stall(P, 24 + i * 44, 36); trough(P, 14, 36, 190); lantern(P, 60, 8); lantern(P, 160, 8); toolRack(P, 120, 4); sign(P, 20, 10, '#c49a62'); windowBox(P, 96, 23, 26);
+    feedBin(P, c, 6, 74, 'corn'); hayStack(P, 190, 74); cans(P, 6, 120, 3); bucket(P, 200, 124, '#fbf8ef');
+    // milking corner, a cowbell and little name plates on the stalls
+    stool(P, 184, 112); bucket(P, 172, 116, '#fbf8ef'); P.vl(76, 8, 4, C.stoneDD); P.rr(73, 12, 7, 7, C.gold); P.px(76, 18, C.goldD);
+    for (let i = 0; i < 4; i++) { P.r(40 + i * 44, 26, 12, 5, C.cream); P.hl(42 + i * 44, 28, 8, C.woodD); }
+    sack(P, c, 26, 78, 'corn'); hay(P, 6, 98, 20);
   } },
   sheeppen: { floor: 'straw', wall: 'plank', windows: [[60, null], [150, null]], animals: 'sheep', draw(P, c) {
-    trough(P, 14, 38, 70); waterTrough(P, 100, 40, 30); hayPile(P, 170, 40); lantern(P, 104, 6); lantern(P, 30, 30); lantern(P, 190, 30); toolRack(P, 10, 4);
-    sack(P, c, 196, 116, 'wool'); basket(P, c, 176, 122, 'wool'); hay(P, 10, 118); bucket(P, 40, 128); P.vl(196, 60, 30, C.woodD); P.r(192, 70, 10, 3, '#e8e0d0');
-    feedBin(P, c, 6, 64, 'carrot'); hay(P, 6, 82, 18); windowBox(P, 56, 23, 26); windowBox(P, 146, 23, 26); stool(P, 160, 124); P.r(140, 122, 8, 3, C.stoneD); sign(P, 120, 10); flowers(P, 80, 124); hay(P, 196, 92, 18);
+    trough(P, 14, 38, 70); waterTrough(P, 100, 40, 30); lantern(P, 104, 6); toolRack(P, 10, 4); sign(P, 120, 10); windowBox(P, 56, 23, 26); windowBox(P, 146, 23, 26);
+    hayStack(P, 176, 40); feedBin(P, c, 6, 70, 'carrot'); hayStack(P, 6, 106);
+    // the shearing corner: stool, clippers on a hook and baskets of wool
+    stool(P, 176, 116); P.vl(196, 60, 4, C.stoneDD); P.line(194, 64, 198, 70, C.stoneD); P.line(198, 64, 194, 70, C.stoneD);
+    for (let i = 0; i < 3; i++) basket(P, c, 158 + i * 18, 124, 'wool'); sack(P, c, 196, 98, 'wool'); sack(P, c, 26, 74, 'carrot');
   } },
   duckhouse: { floor: 'straw', wall: 'teal', windows: [[150, null]], animals: 'duck', draw(P, c) {
-    pond(P, 60, 72, 96, 40); nest(P, c, 14, 40, false); nest(P, c, 40, 40, false); nest(P, c, 180, 40, false); icon(c, 'duckegg', 186, 37);
-    trough(P, 14, 124, 40); lantern(P, 110, 6); lantern(P, 60, 30); lantern(P, 170, 30); sack(P, c, 196, 116, 'oats'); P.oval(100, 66, 10, 4, C.leaf); flowers(P, 160, 120);
-    feedBin(P, c, 196, 60, 'oats'); windowBox(P, 146, 23, 26); sign(P, 70, 10); for (const [x, y] of [[66, 70], [150, 98], [62, 104]]) { P.vl(x, y - 8, 9, '#6a9a4a'); P.oval(x - 1, y - 11, 3, 5, '#8a5a32'); } hay(P, 6, 80, 18); basket(P, c, 176, 124, 'duckegg'); bucket(P, 200, 84);
+    nest(P, c, 8, 38, false); nest(P, c, 30, 38, false); nest(P, c, 186, 38, false); icon(c, 'duckegg', 192, 35); lantern(P, 110, 6); sign(P, 70, 10); windowBox(P, 146, 23, 26);
+    pond(P, 62, 70, 100, 42); for (const [x, y] of [[66, 72], [156, 100], [64, 106]]) { P.vl(x, y - 8, 9, '#6a9a4a'); P.oval(x - 1, y - 11, 3, 5, '#8a5a32'); }
+    feedBin(P, c, 196, 64, 'oats'); trough(P, 8, 126, 40); basket(P, c, 186, 124, 'duckegg');
   } },
   dock: { floor: 'plank', wall: 'plank', windows: [[40, null], [160, null]], fish: true, draw(P, c) {
     P.r(3, 66, RW - 6, RH - 72, C.waterD); P.r(3, 68, RW - 6, RH - 76, C.water);
     for (let x = 6; x < RW - 6; x += 14) P.hl(x, 80 + (x % 28 ? 6 : 0), 6, C.waterL);
     P.r(RW / 2 - 14, 66, 28, RH - 70, C.woodL); for (let y = 66; y < RH - 4; y += 6) P.hl(RW / 2 - 14, y, 28, C.woodD);
-    barrel(P, 16, 42); crate(P, 30, 48); bucket(P, 50, 52); P.line(130, 40, 150, 70, C.woodDD); P.px(150, 71, '#ffffff');
-    net(P, 70, 4); lifeRing(P, 120, 6); oars(P, 186, 34); lantern(P, 106, 34); wallShelf(P, c, 136, 16, 40, ['fish', 'perch', 'trout']);
-    crate(P, 170, 48); basket(P, c, 156, 52, 'fish'); stool(P, 136, 54);
+    net(P, 70, 4); lifeRing(P, 120, 6); oars(P, 190, 34); lantern(P, 100, 34); wallShelf(P, c, 136, 16, 40, ['fish', 'perch', 'trout']);
+    barrelRow(P, 8, 42, 2); crate(P, 36, 48); bucket(P, 52, 52); basket(P, c, 160, 50, 'fish'); crate(P, 176, 48); stool(P, 136, 54);
+    P.line(130, 40, 150, 70, C.woodDD); P.px(150, 71, '#ffffff');
   } },
   greenhouse: { floor: 'dirt', wall: 'glass', windows: [], beds: true, draw(P) {
     fairyLights(P, 4, 4, RW - 8); for (const x of [20, 90, 170]) hangingPlant(P, x, 12);
@@ -372,6 +424,7 @@ const ROOMS = {
     lantern(P, 8, 60); lantern(P, 208, 60); lantern(P, 8, 96); lantern(P, 208, 96);
   } },
 };
+
 export const hasInterior = (type) => !!ROOMS[type];
 export const roomSpec = (type) => ROOMS[type];
 
