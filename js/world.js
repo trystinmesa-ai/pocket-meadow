@@ -184,6 +184,7 @@ export class World {
       const r = DEFS[sp.type].radius;
       for (let y = sp.y - r; y <= sp.y + r; y++) for (let x = sp.x - r; x <= sp.x + r; x++) if (inMap(x, y)) this.sprinkled.add(idx(x, y));
     }
+    this.producing = producingNow(this);
     this.fx = effects(s, this);
     this.version = (this.version || 0) + 1;
   }
@@ -214,6 +215,22 @@ export class World {
     if (put > 0) this.state.inv[item] = (this.state.inv[item] || 0) + put;
     return put;
   }
+  /**
+   * Fair share: the barn's space is split between the things the farm is
+   * producing right now. Whatever part of another item's share it hasn't used
+   * yet is held back for it, so a fast crop can't crowd a slow one out; any
+   * space nobody has a claim on is free for anyone. Room for one item:
+   */
+  roomFor(item) {
+    const free = this.free();
+    if (free <= 0) return 0;
+    const share = this.fairShare();
+    let held = 0;
+    for (const x of this.producing || []) if (x !== item) held += Math.max(0, share - this.have(x));
+    // its own share always fits while there is any free space (many products can over-book the barn)
+    return Math.max(0, free - held, Math.min(free, share - this.have(item)));
+  }
+  fairShare() { return Math.max(6, Math.floor(this.capacity / Math.max(1, (this.producing || new Set()).size))); }
   takeItem(item, qty) {
     const got = Math.min(qty, this.have(item));
     if (got > 0) { this.state.inv[item] -= got; if (!this.state.inv[item]) delete this.state.inv[item]; }
@@ -314,6 +331,18 @@ export function farmPerks(s) {
   for (const wg of wings) if (wg.done) add(wg.perk);
   if (wings.every((x) => x.done)) p.charm += MUSEUM_REWARD.charm;
   return p;
+}
+
+/** Everything the farm is growing or making right now: crops in fields and greenhouse beds, fruit, animal goods and what workshops are making. */
+export function producingNow(w) {
+  const out = new Set();
+  for (const p of w.plots) { if (p.crop) out.add(p.crop); if (p.next) out.add(p.next); }
+  for (const g of w.greenhouses) for (const b of g.beds) { if (b.crop) out.add(b.crop); if (b.next) out.add(b.next); }
+  for (const t of w.trees) out.add(DEFS[t.type].fruit);
+  for (const a of w.animals) if (!a.off) out.add(DEFS[a.type].animal.item);
+  for (const h of w.hives) if (!h.off) out.add(DEFS[h.type].hive.item);
+  for (const b of w.bldgs) if (!b.off && b.cur) out.add(b.cur);
+  return out;
 }
 
 /** Each museum wing with the items it wants and how many are on display. */

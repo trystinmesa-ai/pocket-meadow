@@ -887,6 +887,43 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(!I.hasInterior('crate') && !I.hasInterior('market') && !I.hasInterior('plot'), 'Small things and the market keep their usual card');
 }
 
+// 32. fair share: fast crops can't crowd slow ones out of storage
+{
+  const S = await import('../js/sim.js');
+  const w = empty(), s = w.state; rich(w, 12, 1e6);
+  for (let x = 17; x < 25; x++) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y: 21, crop: 'wheat' }));
+  for (let x = 17; x < 20; x++) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y: 22, crop: 'sugarcane' }));
+  newWorker(s, 'farmer', 'Pip'); newWorker(s, 'farmer', 'Fern'); newWorker(s, 'hauler', 'Bea');
+  for (const x of s.workers) { x.x = 20.5; x.y = 20.5; }
+  w.rebuild();
+  ok(w.roomFor('wheat') === w.free() - w.fairShare(), 'Space is held back for each other crop being grown', `${w.roomFor('wheat')} of ${w.free()}`);
+  const solo = empty(); solo.state.objects.push(initObject({ id: solo.state.nextId++, type: 'plot', x: 17, y: 21, crop: 'wheat' })); solo.rebuild();
+  ok(solo.roomFor('wheat') === solo.free(), 'A farm growing just one thing can fill the whole barn with it');
+  const many = empty(); ['wheat', 'carrot', 'corn', 'sugarcane', 'potato', 'tomato', 'pumpkin', 'onion', 'oats', 'cabbage', 'beans', 'rice'].forEach((c, i) => many.state.objects.push(initObject({ id: many.state.nextId++, type: 'plot', x: 16 + i, y: 21, crop: c }))); many.rebuild();
+  ok(many.roomFor('carrot') >= Math.min(many.free(), many.fairShare()), 'Even with lots of crops, each one always has room for its own share', `${many.roomFor('carrot')} share ${many.fairShare()}`);
+  run(w, 4 * 3600, true, 2);
+  const share = w.fairShare();
+  ok(share === Math.floor(w.capacity / 2), 'The barn splits its space between the crops being grown', `share ${share} of ${w.capacity}`);
+  ok(w.have('wheat') <= share + w.fx.carry, 'Wheat stops at its fair share', `wheat ${w.have('wheat')} / ${share}`);
+  ok(w.have('sugarcane') > 0, 'Slow sugar cane still gets its space', `cane ${w.have('sugarcane')}, barn ${w.used()}/${w.capacity}`);
+  ok(w.plots.some((p) => p.crop === 'wheat' && p.st === 'ripe'), 'Extra wheat waits ripe in its field instead');
+  // selling makes room again
+  E.sell(w, 'wheat', w.have('wheat'));
+  ok(w.roomFor('wheat') > 0, 'Selling frees the space');
+  // pantries hold space for an ingredient before the first one arrives
+  const w2 = empty(), s2 = w2.state; rich(w2, 12, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w2, 'mill', x, y) === '') mill = w2.objAt(x, y);
+  s2.objects.push(initObject({ id: s2.nextId++, type: 'plot', x: 17, y: 21, crop: 'wheat' }), initObject({ id: s2.nextId++, type: 'plot', x: 18, y: 21, crop: 'sugarcane' }));
+  w2.rebuild(); w2.producing = (await import('../js/world.js')).producingNow(w2);
+  mill.inp = { wheat: 1 };
+  const capM = S.pantryCap(mill), wheatWant = S.pantryWant(w2, mill, 'wheat');
+  ok(wheatWant + 1 <= Math.ceil(capM / 2) + 6, 'Wheat only fills its share of the mill’s pantry', `wants ${wheatWant} more of ${capM}`);
+  ok(S.pantryWant(w2, mill, 'sugarcane') > 0, 'Space is kept for sugar cane before any arrives');
+  // a pantry stuffed with one thing uses that up first
+  mill.inp = { wheat: capM + 10, corn: 4 }; mill.recipe = 'auto'; mill.cur = 'cornmeal';
+  ok(S.curRecipe(w2, mill).out === 'flour', 'An over-full pantry makes something that uses up the extra');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

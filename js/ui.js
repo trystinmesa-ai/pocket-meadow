@@ -540,7 +540,8 @@ export class UI {
     const items = Object.keys(ITEMS).filter((k) => w.haveAll(k) > 0);
     const used = w.used();
     let html = `<div class="store"><div class="bar big ${used >= w.capacity ? 'full' : ''}"><i style="width:${Math.min(100, (used / w.capacity) * 100)}%"></i></div>
-      <span data-live="store">${fmt(used)} / ${fmt(w.capacity)} stored</span><span class="hint">Prices +${Math.round((w.fx.sell - 1) * 100)}% from haggling & charm</span></div>`;
+      <span data-live="store">${fmt(used)} / ${fmt(w.capacity)} stored</span><span class="hint">Prices +${Math.round((w.fx.sell - 1) * 100)}% from haggling & charm</span></div>
+      <p class="hint">Fair share: the barn keeps <b>${fmt(w.fairShare())}</b> spaces for each thing you grow or make, so slower crops always have room. Ripe crops wait in their fields until there's space for them.</p>`;
     html += `<div class="row"><button class="btn gold" data-act="sellcrops">${img('coin')} Sell all crops</button><span class="hint">Sells every crop in the barn</span></div>`;
     if (!items.length) html += `<p class="empty">Storage is empty. Your farmhands will bring harvests here.</p>`;
     html += '<div class="list">';
@@ -1658,7 +1659,7 @@ export class UI {
     else if (e.t === 'splash') R.splash(e.x, e.y);
     else if (e.t === 'level') this.levelUp(e.level, e.reward);
     else if (e.t === 'wlevel') this.toast(`${e.w.name} reached level ${e.w.lvl}!`, 'good');
-    else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast('Storage is full! Sell some goods at the market or upgrade the barn.', 'bad'); } }
+    else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast(this.w.free() <= 0 ? 'Storage is full! Sell some goods at the market or upgrade the barn.' : `The barn is sharing space fairly: no more room for ${e.item ? ITEMS[e.item].name.toLowerCase() : 'that'} until you sell some or upgrade storage.`, 'bad'); } }
     else if (e.t === 'fired') { this.toast(`${e.w.name} said goodbye to the farm`); }
     else if (e.t === 'bundle') {
       if (!e.done.length) this.toast(`Gave ${e.n} to the ${E.bundleLabel(e.id)}`);

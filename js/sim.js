@@ -5,7 +5,7 @@ import { DEFS, ITEMS, CROPS, ROLES, ALL_TASKS, ORDER_SLOTS, ORDER_EVERY, ORDER_N
   MAX_WORKER_LEVEL, workerXpNeeded, DEBRIS_EVERY, debrisMax, MAP, VILLAGERS, GIANT_CROPS, GIANT_CHANCE, GOLD_MULT,
   FISH, SPECIES_CHANCE, ANIMAL_TREASURE } from './data.js';
 import { stepQuarry } from './quarry.js';
-import { idx, doorTile, hash2, cropUnlocked } from './world.js';
+import { idx, doorTile, hash2, cropUnlocked, producingNow } from './world.js';
 import { findPath } from './path.js';
 import { seasonAt, festivalOn, festivalId, seasonGrowth, canPlantNow } from './seasons.js';
 import { FESTIVAL_ORDER_EVERY, FESTIVAL_SLOTS } from './data.js';
@@ -61,12 +61,16 @@ export function pantryWant(world, b, k, r = curRecipe(world, b)) {
   if (!items.includes(k)) return 0;
   const cap = pantryCap(b), have = b.inp[k] || 0;
   const cur = r && r.in[k] ? r.in[k] : 0;
-  // room is shared between the ingredients the farm actually has
-  const stocked = items.filter((x) => b.inp[x] || onFarm(world, x) > 0).length || 1;
-  const want = Math.max(Math.floor(cap / stocked), cur * 2) - have;
+  // room is shared between the ingredients the farm has or is growing, even before the first one arrives
+  const stocked = items.filter((x) => b.inp[x] || onFarm(world, x) > 0 || world.producing?.has(x)).length || 1;
+  const share = Math.floor(cap / stocked);
+  const want = Math.max(share, cur * 2) - have;
   if (want <= 0) return 0;
+  // stock over its own share doesn't crowd others out (it gets used up first)
+  let used = 0;
+  for (const x in b.inp) used += x === k ? b.inp[x] : Math.min(b.inp[x], Math.max(share, r && r.in[x] ? r.in[x] * 2 : 0));
   // one batch of the current recipe always fits, so a full pantry can't stall it
-  return Math.max(Math.max(0, cur - have), Math.min(want, cap - pantryUsed(b)));
+  return Math.max(Math.max(0, cur - have), Math.min(want, cap - used));
 }
 const recipeValueGain = (r) => {
   let v = 0; for (const k in r.in) v += ITEMS[k].value * r.in[k];
@@ -121,6 +125,14 @@ function waitingAll(world) {
 function onFarm(world, k, except) {
   return world.have(k) + (waitingAll(world)[k] || 0) - (except && !except._cc ? waiting(world, except, k) : 0);
 }
+/** Is there somewhere to put this item right now: the barn's fair share, or a workshop pantry that wants it? */
+export function canStore(world, item) {
+  if (world._csT !== world.time) { world._csT = world.time; world._cs = new Map(); }
+  if (world._cs.has(item)) return world._cs.get(item);
+  const ok = world.roomFor(item) > 0 || world.bldgs.some((b) => !b._cs && pantryWant(world, b, item) > 0);
+  world._cs.set(item, ok);
+  return ok;
+}
 function feasible(world, b, r) {
   for (const k in r.in) if ((b.inp[k] || 0) + onFarm(world, k, b) < r.in[k]) return false;
   return true;
@@ -149,6 +161,12 @@ export function curRecipe(world, b) {
     return r;
   }
   const cur = list.find((r) => r.out === b.cur);
+  if (pantryUsed(b) > pantryCap(b)) {
+    // over-full (one ingredient has more than its share): make something that uses it up
+    const top = Object.keys(b.inp).sort((a, c) => b.inp[c] - b.inp[a])[0];
+    const drain = list.find((r) => r.in[top] && hasInputs(b, r));
+    if (drain) { if (drain !== cur) switchRecipe(world, b, drain); return drain; }
+  }
   if (cur && (hasInputs(b, cur) || feasible(world, b, cur))) return cur;
   let best = null;
   for (const r of list) if (feasible(world, b, r) && (!best || recipeValueGain(r) > recipeValueGain(best))) best = r;
@@ -173,6 +191,7 @@ export function step(world, dt, fast, now) {
   world.festival = festivalOn(now);
   world.raining = rain;
   const heat = world.weather === 'heat';
+  world.producing = producingNow(world);
 
   let ripe = 0, empty = 0, dry = 0;
   for (const p of world.plots) {
@@ -476,11 +495,11 @@ function resolveDeliver(world, w, job, s) {
   job.steps.splice(job.i, 0, { t: 'go', x, y, ref: st.id }, {
     t: 'do', anim: 'deposit', dur: 0.5, fx: () => {
       const c = w.carry; if (!c) return;
-      const put = world.addItem(c.item, c.qty);
+      const put = world.addItem(c.item, Math.min(c.qty, world.roomFor(c.item)));
       c.qty -= put;
       if (put) float(world, x, y - 1, `+${put}`, c.item);
       if (c.qty <= 0) w.carry = null;
-      else { dropPile(world, w, x, y); world.events.push({ t: 'full' }); }
+      else { dropPile(world, w, x, y); world.events.push({ t: 'full', item: c.item }); }
     },
   });
 }
@@ -489,8 +508,8 @@ function resolveDeliver(world, w, job, s) {
 const FIND = {
   harvest(world, w) {
     if (!world.avail.ripe) return null;
-    const room = world.free() > 0 || (world.hauler && world.pileQty <= 30);
-    const p = nearest(world.plots, w, (o) => o.st === 'ripe' && !o._c && !bad(world, o) && room);
+    // a crop with no room waits ripe in its field, so slower crops still get their space
+    const p = nearest(world.plots, w, (o) => o.st === 'ripe' && !o._c && !bad(world, o) && canStore(world, o.crop));
     if (!p) return null;
     const job = new Job(w, 'harvest', `Harvesting ${ITEMS[p.crop].name}`);
     harvestSteps(world, w, job, p);
@@ -540,8 +559,7 @@ const FIND = {
   },
   pickTree(world, w) {
     if (!world.avail.ripeTrees) return null;
-    const room = world.free() > 0 || (world.hauler && world.pileQty <= 30);
-    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && room);
+    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && canStore(world, DEFS[o.type].fruit));
     if (!t) return null;
     const [ax, ay] = accessTile(world, t);
     const d = DEFS[t.type];
@@ -561,18 +579,18 @@ const FIND = {
   },
   haulPile(world, w) {
     if (!world.avail.piles) return null;
-    const room = world.free() > 0;
-    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && room);
+    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && canStore(world, o.item));
     if (!p) return null;
     const job = new Job(w, 'haulPile', `Carrying ${ITEMS[p.item].name}`).claim(p, '_c');
     pickupPileSteps(world, w, job, p);
     return deliver(job, false);
   },
   collect(world, w) {
-    if (world.free() <= 0) return null;
+    if (world.free() <= 0 && !world.bldgs.length) return null;
     const cap = world.fx.carry;
     const b = nearest(world.bldgs, w, (o) => {
       if (o._cc || bad(world, o)) return false;
+      if (!Object.keys(o.out).some((k) => canStore(world, k))) return false;
       const n = outTotal(o);
       return n >= Math.min(cap, 2) || (n > 0 && (o.prog <= 0 || n >= outCap(o)));
     });
@@ -581,7 +599,7 @@ const FIND = {
     const job = new Job(w, 'collect', `Collecting from the ${DEFS[b.type].name}`).claim(b, '_cc');
     job.go(x, y, b.id).do('load', wDur(world, w, 0.6), () => {
       let item = null;
-      for (const k in b.out) if (!item || b.out[k] > b.out[item]) item = k;
+      for (const k in b.out) if (canStore(world, k) && (!item || b.out[k] > b.out[item])) item = k;
       if (!item) return;
       const take = Math.min(world.fx.carry, b.out[item]);
       b.out[item] -= take; if (!b.out[item]) delete b.out[item];
@@ -630,11 +648,12 @@ const FIND = {
     return supplyJob(world, w, a, A.feed, feedCap(a) - a.feed, '_cs', `Feeding the ${A.kind}s`, (q) => { a.feed += q; });
   },
   collectAnimal(world, w) {
-    if (!world.avail.animalOut || world.free() <= 0) return null;
+    if (!world.avail.animalOut) return null;
     const cap = world.fx.carry;
     const list = world.animals.concat(world.hives);
     const a = nearest(list, w, (o) => {
       if (o._cc || bad(world, o)) return false;
+      if (!canStore(world, DEFS[o.type].hive ? DEFS[o.type].hive.item : DEFS[o.type].animal.item)) return false;
       const full = DEFS[o.type].hive ? hiveCap(o) : animalCap(o);
       return o.out >= Math.min(cap, full) || o.out >= full;
     });
