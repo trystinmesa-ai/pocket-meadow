@@ -183,8 +183,15 @@ export class Renderer {
     const add = (y, fn) => list.push([y, fn]);
     const sid = this.sid;
     this.hits = [];
+    // trail signs at the edge of the map lead to the quarry (trees around them are cleared)
+    const signs = trailParcels(world).map((tp) => {
+      const P = MAP.parcel, mid = (a) => (a * P + P / 2) * TILE;
+      return tp.side === 'w' ? [-TILE * 0.8, mid(tp.py)] : tp.side === 'e' ? [MAP.w * TILE + TILE * 0.8, mid(tp.py)] : tp.side === 'n' ? [mid(tp.px), -TILE * 0.3] : [mid(tp.px), MAP.h * TILE + TILE * 1.4];
+    });
+    const nearSign = (X, Y) => signs.some(([sx, sy]) => Math.abs(X + 8 - sx) < TILE * 2.2 && Y + TILE > sy - TILE * 2.5 && Y < sy + TILE * 2.5);
     for (const b of this.border) {
       const X = b.x * TILE, Y = b.y * TILE;
+      if (nearSign(X, Y)) continue;
       if (!vis(X - 8, Y - 24, 32, 40)) continue;
       add(Y + TILE, () => this.blit(wildSprite(b.k, sid), X + b.ox - 3, Y + TILE, 1));
     }
@@ -208,12 +215,6 @@ export class Renderer {
     this.updatePets(dt);
     for (const p of this.petState.values()) add(p.y, () => this.drawPet(p));
     for (const c of this.critters.values()) for (const a of c) add(a.y, () => this.drawCritter(a));
-    // trail signs at the edge of the map lead to the quarry
-    for (const tp of trailParcels(world)) {
-      const P = MAP.parcel, mid = (a) => (a * P + P / 2) * TILE;
-      const [X, Y] = tp.side === 'w' ? [-TILE * 0.8, mid(tp.py)] : tp.side === 'e' ? [MAP.w * TILE + TILE * 0.8, mid(tp.py)] : tp.side === 'n' ? [mid(tp.px), -TILE * 0.3] : [mid(tp.px), MAP.h * TILE + TILE * 1.4];
-      add(Y, () => { const [x, y] = this.blit(signSprite(), X, Y, 0); this.hits.push({ ref: { trail: true }, x0: x - 6, y0: y - 6, x1: x + 24, y1: Y + 6 }); });
-    }
     for (const w of s.workers) {
       if (w._hidden || w.role === 'miner') continue;
       const fx = w.x * TILE, fy = w.y * TILE + 4;
@@ -232,6 +233,13 @@ export class Renderer {
     ctx.fillRect(-BORDER * TILE, 0, BORDER * TILE, MAP.h * TILE);
     ctx.fillRect(MAP.w * TILE, 0, BORDER * TILE, MAP.h * TILE);
 
+    // trail signs go on top of the forest edge so they're never hidden
+    for (const [X, Y] of signs) {
+      this.shadow(X, Y - 1, 8, 2.5);
+      const [x, y] = this.blit(signSprite(), X, Y, 0);
+      this.hits.push({ ref: { trail: true }, x0: x - 6, y0: y - 6, x1: x + 24, y1: Y + 6 });
+      if (Math.random() < 0.02) this.spark(X + (Math.random() - 0.5) * 14, Y - 18);
+    }
     this.drawBunting();
     // building overlays: mill sails and busy smoke
     this.drawParticles(dt);

@@ -1,4 +1,4 @@
-// Money in and money out: selling, auto-sell, purchases, upgrades, land,
+// Money in and money out: selling, purchases, upgrades, land,
 // hiring and orders. UI code calls these; each returns '' on success or a reason.
 import { ACHIEVEMENTS, achReward, HATS, DEFS, ITEMS, CROPS, UPGRADES, upgradeCost, hireCost, xpForLevel, levelReward, MAX_LEVEL, parcelCost, parcelLevel, MAP } from './data.js';
 import { PW, PH, newWorker, initObject, sellPrice, storeCap, effects } from './world.js';
@@ -49,18 +49,6 @@ export function sellDirect(world, item, qty) {
   st.soldCoins += coins;
   earn(world, coins);
   return coins;
-}
-
-export function autoSellItem(world, item) {
-  const res = world.state.autoSell[item];
-  if (res === undefined) return 0;
-  const extra = world.have(item) - res;
-  return extra > 0 ? sell(world, item, extra) : 0;
-}
-export function autoSellAll(world) {
-  let n = 0;
-  for (const item in world.state.autoSell) n += autoSellItem(world, item);
-  return n;
 }
 
 // ---------- costs ----------

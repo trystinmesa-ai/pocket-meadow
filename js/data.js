@@ -249,7 +249,7 @@ export const DEFS = {
   bigsprinkler: { name: 'Great Sprinkler', cat: 'utility', w: 1, h: 1, level: 14, cost: grow(4000, 1.15), radius: 2,
     desc: 'Keeps the 24 plots around it watered.' },
   market:    { name: 'Market Stall', cat: 'special', w: 2, h: 2, door: true, level: 1, cost: 0, unique: true, fixed: true,
-    desc: 'Sell your goods and set up auto-selling.' },
+    desc: 'Sell your goods here.' },
   board:     { name: 'Notice Board', cat: 'special', w: 1, h: 1, door: true, level: 1, cost: 0, unique: true, fixed: true,
     desc: 'Villagers post orders here. Fill them for bonus coins.' },
 

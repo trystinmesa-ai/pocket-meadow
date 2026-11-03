@@ -107,7 +107,10 @@ export function migrate(s) {
   s.bundles ||= {}; s.bundles.give ||= {}; s.bundles.done ||= {};
   s.stats.earned ||= 0; s.stats.soldCoins ||= 0; s.stats.orders ||= 0; s.stats.play ||= 0;
   s.settings = { grid: false, helpers: true, motion: true, ...(s.settings || {}) };
-  s.piles ||= []; s.orders ||= []; s.autoSell ||= {}; s.upgrades ||= {}; s.seeds ||= { wheat: true, carrot: true };
+  s.piles ||= []; s.orders ||= []; s.autoSell = {}; s.upgrades ||= {}; s.seeds ||= { wheat: true, carrot: true };
+  // a friend's shared farm leaves out storage and counters: fill in anything missing
+  s.inv ||= {}; s.objects ||= []; s.workers ||= []; s.coins ||= 0; s.xp ||= 0; s.level ||= 1; s.nextOrderAt ||= Date.now() + 90e3; s.ribbons ||= 0;
+  s.nextId = Math.max(s.nextId || 1, 1 + Math.max(0, ...s.objects.map((o) => o.id || 0), ...s.workers.map((w) => w.id || 0), ...(s.pets || []).map((p) => p.id || 0)));
   s.pendingCoins ||= 0; s.goal ||= 0; s.rev ||= 0;
   // materials arrived after some farms were already built up: give those a head start
   if (!s.mats) {

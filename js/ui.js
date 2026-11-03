@@ -110,6 +110,7 @@ export class UI {
     this.mode = null;
     this.sel = null;
     this.sheet = null;
+    this.sellQty = {}; // amount picked for each item's sell buttons
     this.tab = { build: 'field', menu: 'farm', journal: 'goals', orders: 'orders' };
     this.toastQ = [];
     this.modalQ = [];
@@ -232,9 +233,11 @@ export class UI {
       case 'helpers': s.settings.helpers = !!d.checked; this.g.dirty(); break;
       // market
       case 'sell': { const n = d.n === 'all' ? w.haveAll(d.item) : +d.n; const c = E.sell(w, d.item, n); if (c) { this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
-      case 'sellcrops': { let c = 0; for (const k in s.inv) if (CROPS[k] && s.autoSell[k] === undefined) c += E.sell(w, k, w.have(k)); if (c) { this.toast(`Sold crops for ${fmt(c)} coins`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
-      case 'auto': if (s.autoSell[d.item] === undefined) s.autoSell[d.item] = 0; else delete s.autoSell[d.item]; E.autoSellItem(w, d.item); this.g.dirty(); this.renderSheet(); break;
-      case 'reserve': { const v = Math.max(0, (s.autoSell[d.item] || 0) + +d.n); s.autoSell[d.item] = v; this.g.dirty(); this.renderSheet(); break; }
+      case 'sellcrops': { let c = 0; for (const k in s.inv) if (CROPS[k]) c += E.sell(w, k, w.have(k)); if (c) { this.toast(`Sold crops for ${fmt(c)} coins`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
+      case 'sqty': { const [kind, k] = d.key.split(':'); this.sellQty[d.key] = Math.max(1, Math.min(this.sellHave(kind, k), (this.sellQty[d.key] || 1) + +d.n)); this.renderSheet(); break; }
+      case 'sqtyset': { const [kind, k] = d.key.split(':'); this.sellQty[d.key] = Math.max(1, Math.min(this.sellHave(kind, k), Math.floor(+d.value) || 1)); this.renderSheet(); break; }
+      case 'movefixed': { const o = w.objects.find((x) => x.type === d.type); if (o) { this.openSheet(null); this.goFarm(); this.setMode({ k: 'move', obj: o, x: o.x, y: o.y }); this.g.focus(o.x * TILE + 16, o.y * TILE + 16); } break; }
+      case 'sellq': this.sellNow(d.key, !!d.all, el); break;
       // orders
       case 'fill': { const o = s.orders.find((x) => x.id === +d.id); if (o && fail(E.fillOrder(w, o))) { this.toast(`Order delivered! +${fmt(o.reward)} coins`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
       case 'skip': { const o = s.orders.find((x) => x.id === +d.id); if (o) { E.skipOrder(w, o); this.g.dirty(); this.renderSheet(); } break; }
@@ -533,30 +536,43 @@ export class UI {
 
   sheet_market() {
     const w = this.w, s = this.s;
-    const items = Object.keys(ITEMS).filter((k) => w.haveAll(k) > 0 || s.autoSell[k] !== undefined);
+    const items = Object.keys(ITEMS).filter((k) => w.haveAll(k) > 0);
     const used = w.used();
     let html = `<div class="store"><div class="bar big ${used >= w.capacity ? 'full' : ''}"><i style="width:${Math.min(100, (used / w.capacity) * 100)}%"></i></div>
       <span data-live="store">${fmt(used)} / ${fmt(w.capacity)} stored</span><span class="hint">Prices +${Math.round((w.fx.sell - 1) * 100)}% from haggling & charm</span></div>`;
-    html += `<div class="row"><button class="btn gold" data-act="sellcrops">${img('coin')} Sell all crops</button><span class="hint">Skips items set to auto-sell</span></div>`;
+    html += `<div class="row"><button class="btn gold" data-act="sellcrops">${img('coin')} Sell all crops</button><span class="hint">Sells every crop in the barn</span></div>`;
     if (!items.length) html += `<p class="empty">Storage is empty. Your farmhands will bring harvests here.</p>`;
     html += '<div class="list">';
     for (const k of items) {
-      const auto = s.autoSell[k];
       html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="q${k}">${this.qtyText(k)}</b> · ${coin(sellPrice(w, k))} each</div></div>
-        <div class="ib"><button class="btn small" data-act="sell" data-item="${k}" data-n="1">Sell 1</button><button class="btn small gold" data-act="sell" data-item="${k}" data-n="all">All</button></div>
-        <div class="ia"><label class="check"><input type="checkbox" data-chg="auto" data-item="${k}" ${auto !== undefined ? 'checked' : ''}> Auto-sell</label>
-        ${auto !== undefined ? `<span class="keep">keep <button class="btn tiny" data-act="reserve" data-item="${k}" data-n="-5">−</button><b>${auto}</b><button class="btn tiny" data-act="reserve" data-item="${k}" data-n="5">+</button></span>` : ''}</div></div>`;
+        ${this.sellerHTML('item', k)}</div>`;
     }
-    html += '</div><p class="hint">Auto-sell sells anything above the amount you keep, even while you are away. Keep some if a workshop needs it.</p>';
+    html += '</div><p class="hint">Pick how many with − and +, or type a number, then tap Sell. All sells the whole stack. Keep some if a workshop needs it.</p>';
     const golds = Object.keys(s.gold).filter((k) => s.gold[k] > 0);
     if (golds.length) {
       html += `<h3>${img('star')} Gold-star produce</h3><p class="hint">Your best harvests, worth ${GOLD_MULT}× the usual price.</p><div class="list">`;
       for (const k of golds) html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">Gold-star ${ITEMS[k].name} ${img('star')}</div><div class="iq"><b>${fmt(s.gold[k])}</b> · ${coin(E.goldPrice(w, k))} each</div></div>
-        <div class="ib"><button class="btn small gold" data-act="sellgold" data-item="${k}" data-n="all">Sell all</button></div></div>`;
+        ${this.sellerHTML('gold', k)}</div>`;
       html += '</div>';
     }
     html += `<div class="row"><span class="hint">Building materials and finds are kept separately: see everything you own in the Inventory.</span><button class="btn small" data-act="sheet" data-v="inventory">${img('box')} Inventory</button></div>`;
+    html += `<div class="row center"><button class="btn small" data-act="movefixed" data-type="market">${img('move')} Move the market stall</button></div>`;
     return { title: `${img('market', 'pi big')} Market`, html };
+  }
+  sellHave(kind, k) { return kind === 'mat' ? this.w.mat(k) : kind === 'gold' ? this.s.gold[k] || 0 : this.w.haveAll(k); }
+  /** − amount + · Sell · All, for barn goods (item), materials (mat) or gold-star produce (gold). */
+  sellerHTML(kind, k) {
+    const have = this.sellHave(kind, k), key = `${kind}:${k}`, q = Math.max(1, Math.min(have, this.sellQty[key] || 1));
+    return `<div class="seller"><button class="btn tiny" data-act="sqty" data-key="${key}" data-n="-1" ${q <= 1 ? 'disabled' : ''} aria-label="Less">−</button><input class="sq" type="number" min="1" max="${have}" value="${q}" data-chg="sqtyset" data-key="${key}" inputmode="numeric" aria-label="How many"><button class="btn tiny" data-act="sqty" data-key="${key}" data-n="1" ${q >= have ? 'disabled' : ''} aria-label="More">+</button>
+      <button class="btn small" data-act="sellq" data-key="${key}" ${have < 1 ? 'disabled' : ''}>Sell</button><button class="btn small gold" data-act="sellq" data-key="${key}" data-all="1" ${have < 1 ? 'disabled' : ''}>All</button></div>`;
+  }
+  sellNow(key, all, el) {
+    const [kind, k] = key.split(':'), have = this.sellHave(kind, k), w = this.w;
+    const n = all ? have : Math.max(1, Math.min(have, this.sellQty[key] || 1));
+    const c = kind === 'mat' ? E.sellMat(w, k, n) : kind === 'gold' ? E.sellGold(w, k, n) : E.sell(w, k, n);
+    if (c) { this.toast(`Sold ${fmt(n)} ${ITEMS[k].name} for ${fmt(c)} coins`, 'good'); this.coinPop(el); this.g.dirty(); }
+    this.sellQty[key] = Math.max(1, Math.min(this.sellQty[key] || 1, this.sellHave(kind, k)));
+    this.renderSheet();
   }
   matsLine() { return MATS.map((k) => `<span class="mat">${infoImg(k)}${fmt(this.w.mat(k))}</span>`).join(''); }
   live_market() {
@@ -593,7 +609,7 @@ export class UI {
     let html = `<h3>${img('box')} Material shed</h3><div class="list">`;
     for (const k of MATS) {
       html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b data-live="m${k}">${fmt(w.mat(k))}</b> / ${fmt(w.shedCap)} · ${coin(ITEMS[k].value)} each</div></div>
-        <div class="ib"><button class="btn small" data-act="sellmat" data-item="${k}" data-n="10" ${w.mat(k) < 1 ? 'disabled' : ''}>Sell 10</button></div></div>`;
+        ${this.sellerHTML('mat', k)}</div>`;
     }
     html += '</div>';
     if (L >= SHED_MAX) html += '<p class="hint">Your shed is as big as it gets.</p>';
@@ -668,6 +684,7 @@ export class UI {
         <span><button class="btn small" data-act="skip" data-id="${o.id}">Skip</button> <button class="btn small green" data-act="fill" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></span></div></div>`;
     }
     html += `<p class="hint" data-live="next">${this.nextOrderText()}</p>`;
+    html += `<div class="row center"><button class="btn small" data-act="movefixed" data-type="board">${img('move')} Move the notice board</button></div>`;
     return html;
   }
   heartsHTML(pts = 0) {
@@ -881,7 +898,7 @@ export class UI {
         <p><b>Controls:</b> drag to move around, pinch or scroll to zoom. Tap anything to see it up close. In build mode, drag to paint fields, paths and fences (use two fingers or right-drag to move the view).</p>
         <p><b>Farmhands:</b> each has a job. Farmers tend fields and trees, Haulers carry harvests and stock workshops, Artisans run workshops, Ranchers care for animals and bees. When their own work is done they help elsewhere.</p>
         <p><b>Making things:</b> workshops turn crops into goods worth much more. Tap a workshop to pick a recipe, or leave it on Auto to make the most valuable thing it can.</p>
-        <p><b>While you are away:</b> the farm keeps running for up to ${w.fx.offlineH} hours (Night Shift adds more). Coins from auto-sell wait for you to collect. Storage limits apply, so upgrade your barn and use auto-sell.</p>
+        <p><b>While you are away:</b> the farm keeps running for up to ${w.fx.offlineH} hours (Night Shift adds more). Everything they gather waits in storage for you to sell when you're back, so upgrade your barn to hold more.</p>
         <p><b>Tips:</b> paths make farmhands faster. Put storage crates near far-off fields. Wells and sprinklers make crops grow faster. Rain waters everything for free. Flowers near beehives make more honey. Expand out to the stream or pond and build a Fishing Dock to catch fish.</p>
         <p><b>Materials:</b> buildings need wood and stone, and better ones need copper, iron and gold ore. Farmhands clear fallen branches and rocks on your land for a little. For lots more, buy land at the edge of the map, follow the trail sign to the quarry and hire Miners. New buildings take a while to go up, and idle farmhands help.</p>
         <p><b>The village:</b> neighbours post orders on the notice board. Fill them to make friends (each heart brings a gift). Restore the village buildings for lasting bonuses; fixing the old bridge brings a travelling merchant every couple of days.</p>
@@ -1640,7 +1657,7 @@ export class UI {
     else if (e.t === 'splash') R.splash(e.x, e.y);
     else if (e.t === 'level') this.levelUp(e.level, e.reward);
     else if (e.t === 'wlevel') this.toast(`${e.w.name} reached level ${e.w.lvl}!`, 'good');
-    else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast('Storage is full! Sell goods, turn on auto-sell or upgrade the barn.', 'bad'); } }
+    else if (e.t === 'full') { if (Date.now() - this.lastFull > 30000) { this.lastFull = Date.now(); this.toast('Storage is full! Sell some goods at the market or upgrade the barn.', 'bad'); } }
     else if (e.t === 'fired') { this.toast(`${e.w.name} said goodbye to the farm`); }
     else if (e.t === 'bundle') {
       if (!e.done.length) this.toast(`Gave ${e.n} to the ${E.bundleLabel(e.id)}`);

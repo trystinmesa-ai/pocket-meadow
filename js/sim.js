@@ -9,7 +9,7 @@ import { idx, doorTile, hash2, cropUnlocked } from './world.js';
 import { findPath } from './path.js';
 import { seasonAt, festivalOn, festivalId, seasonGrowth, canPlantNow } from './seasons.js';
 import { FESTIVAL_ORDER_EVERY, FESTIVAL_SLOTS } from './data.js';
-import { earn, autoSellItem, autoSellAll, sellDirect, canAffordSeeds, paySeeds } from './economy.js';
+import { earn, canAffordSeeds, paySeeds } from './economy.js';
 
 const R = Math.random;
 const WALK = 2.3; // tiles per second
@@ -247,8 +247,6 @@ export function step(world, dt, fast, now) {
   for (const w of s.workers) if (w.role !== 'miner') updateWorker(world, w, dt, fast);
   stepQuarry(world, dt);
 
-  world._autoT = (world._autoT || 0) + dt;
-  if (world._autoT >= 4) { world._autoT = 0; autoSellAll(world); }
   s.simTime = now;
 }
 
@@ -384,8 +382,6 @@ function nearest(list, w, ok) {
   return best;
 }
 const bad = (world, o) => o._bad && o._bad > world.time;
-// Goods set to auto-sell can always be delivered (they sell on arrival).
-const sells = (world, item) => world.state.autoSell[item] !== undefined;
 
 // The tile beside an object where a farmhand stands to use it.
 export function accessTile(world, o) {
@@ -480,17 +476,8 @@ function resolveDeliver(world, w, job, s) {
   job.steps.splice(job.i, 0, { t: 'go', x, y, ref: st.id }, {
     t: 'do', anim: 'deposit', dur: 0.5, fx: () => {
       const c = w.carry; if (!c) return;
-      let put = world.addItem(c.item, c.qty);
+      const put = world.addItem(c.item, c.qty);
       c.qty -= put;
-      if (put) autoSellItem(world, c.item);
-      // auto-sold goods free their own space, so the rest fits too
-      if (c.qty > 0 && world.state.autoSell[c.item] !== undefined) {
-        const more = world.addItem(c.item, c.qty);
-        c.qty -= more; put += more;
-        autoSellItem(world, c.item);
-        // storage is full of other things: sell straight from the basket
-        if (c.qty > 0) { sellDirect(world, c.item, c.qty); put += c.qty; c.qty = 0; }
-      }
       if (put) float(world, x, y - 1, `+${put}`, c.item);
       if (c.qty <= 0) w.carry = null;
       else { dropPile(world, w, x, y); world.events.push({ t: 'full' }); }
@@ -503,7 +490,7 @@ const FIND = {
   harvest(world, w) {
     if (!world.avail.ripe) return null;
     const room = world.free() > 0 || (world.hauler && world.pileQty <= 30);
-    const p = nearest(world.plots, w, (o) => o.st === 'ripe' && !o._c && !bad(world, o) && (room || sells(world, o.crop)));
+    const p = nearest(world.plots, w, (o) => o.st === 'ripe' && !o._c && !bad(world, o) && room);
     if (!p) return null;
     const job = new Job(w, 'harvest', `Harvesting ${ITEMS[p.crop].name}`);
     harvestSteps(world, w, job, p);
@@ -554,7 +541,7 @@ const FIND = {
   pickTree(world, w) {
     if (!world.avail.ripeTrees) return null;
     const room = world.free() > 0 || (world.hauler && world.pileQty <= 30);
-    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && (room || sells(world, DEFS[o.type].fruit)));
+    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && room);
     if (!t) return null;
     const [ax, ay] = accessTile(world, t);
     const d = DEFS[t.type];
@@ -575,7 +562,7 @@ const FIND = {
   haulPile(world, w) {
     if (!world.avail.piles) return null;
     const room = world.free() > 0;
-    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && (room || sells(world, o.item)));
+    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && room);
     if (!p) return null;
     const job = new Job(w, 'haulPile', `Carrying ${ITEMS[p.item].name}`).claim(p, '_c');
     pickupPileSteps(world, w, job, p);

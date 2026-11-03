@@ -77,7 +77,7 @@ function placeAny(type, extra) {
 }
 
 function act(t, now) {
-  for (const it in ITEMS) if (s.autoSell[it] === undefined) s.autoSell[it] = 12;
+  for (const k in s.inv) if (s.inv[k] > 12) E.sell(w, k, s.inv[k] - 12); // an all-day player sells as they go
   for (const o of [...s.orders]) if (E.canFill(w, o)) E.fillOrder(w, o);
   for (const id in BUNDLES) if (E.bundleState(w, id).canGive) E.giveBundle(w, id);
   if (!s.quarry) E.discoverQuarry(w);

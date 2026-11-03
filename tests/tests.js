@@ -68,9 +68,8 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   const got = E.sell(w, 'wheat', 10);
   ok(got === sellPrice(w, 'wheat') * 10 && w.state.coins === coins + got, 'Selling adds coins at the listed price', `+${got}`);
   ok(w.state.stats.earned === got && w.state.xp === got, 'Earnings give the same XP');
-  w.state.autoSell.wheat = 5;
-  E.autoSellItem(w, 'wheat');
-  ok(w.have('wheat') === 5, 'Auto-sell keeps the reserve', `have ${w.have('wheat')}`);
+  ok(E.sell(w, 'wheat', 999) === sellPrice(w, 'wheat') * 20 && w.have('wheat') === 0, 'Selling more than you have sells the whole stack');
+  ok(typeof E.autoSellAll === 'undefined', 'There is no auto-sell any more');
   w.state.xp = 0; w.state.level = 1; E.earn(w, 70);
   ok(w.state.level === 2, 'Earning XP levels up the farm', `level ${w.state.level}`);
 }
@@ -152,10 +151,10 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
 // 10. offline catch-up and cap
 {
   const w = fresh();
-  w.state.autoSell.wheat = 0;
+  const c0 = w.state.coins;
   const sum = await catchUp(w, 2 * 3600 * 1000);
-  ok(sum.harvest.wheat > 100, 'Two hours away: farm keeps harvesting', `wheat ${sum.harvest.wheat}`);
-  ok(w.state.pendingCoins > 0 && sum.coins > 0, 'Offline auto-sale coins wait to be collected', `pending ${w.state.pendingCoins}`);
+  ok(sum.harvest.wheat > 50 && w.have('wheat') > 0, 'Two hours away: farm keeps harvesting into storage', `wheat ${sum.harvest.wheat}`);
+  ok(!w.state.pendingCoins && w.state.coins <= c0, 'Nothing gets sold while you are away', `coins ${c0} -> ${w.state.coins}`);
   const w2 = fresh();
   const t = performance.now();
   const s2 = await catchUp(w2, 30 * 3600 * 1000);
@@ -172,7 +171,6 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   for (let y = 8; y < 32; y++) for (let x = 8; x < 40; x++) if ((x + y) % 5 && n < 220 && E.place(w, 'plot', x, y, { crop: ['wheat', 'corn', 'tomato', 'grapes'][n % 4] }) === '') n++;
   E.place(w, 'cottage', 8, 8); E.place(w, 'cottage', 10, 8); E.place(w, 'cottage', 12, 8); E.place(w, 'cottage', 36, 8); E.place(w, 'cottage', 38, 8);
   while (E.hire(w, 'farmer') === '');
-  for (const it in ITEMS) w.state.autoSell[it] = 0;
   const t = performance.now();
   await catchUp(w, 8 * 3600 * 1000);
   const ms = performance.now() - t;
@@ -259,19 +257,17 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   run(w, 3 * 3600, true, 2);
   const piled = w.state.piles.reduce((a, p) => a + p.qty, 0);
   ok(w.used() === w.capacity && piled <= 45, 'Full storage pauses harvesting (ground piles stay small)', `stored ${w.used()}/${w.capacity}, piled ${piled}`);
-  // with auto-sell on, the farm keeps earning even when storage is full of other goods
-  w.state.inv = { carrot: w.capacity };
-  w.state.autoSell.wheat = 0;
-  const c0 = w.state.coins;
+  // selling makes room and the harvest starts again
+  E.sell(w, 'wheat', w.have('wheat'));
+  const h0 = w.state.stats.harvest.wheat;
   run(w, 600, true);
-  ok(w.state.coins > c0 + 50, 'Auto-sell goods sell from the basket when storage is full', `+${w.state.coins - c0}`);
+  ok(w.state.stats.harvest.wheat > h0 && w.used() > 0, 'Selling frees space and harvesting picks up again', `+${w.state.stats.harvest.wheat - h0}`);
 }
 
 // 16. expansion content
 {
   const w = fresh();
   rich(w, 20);
-  w.state.autoSell.wheat = 0;
   ok(E.place(w, 'dock', 16, 21) === 'Build it right next to water', 'Fishing dock must be built beside water');
   // buy land toward the east stream and find a spot touching water
   for (const [px, py] of [[4, 2], [5, 2]]) E.buyParcel(w, px, py);
@@ -280,7 +276,7 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(placed, 'Fishing dock can be built at the stream', placed);
   E.place(w, 'cottage', 16, 21);
   E.hire(w, 'rancher');
-  run(w, 1200, true);
+  for (let i = 0; i < 12; i++) { run(w, 100, true); E.sell(w, 'wheat', w.have('wheat')); }
   ok(w.have('fish') > 0, 'Docks catch fish that ranchers bring in', `fish ${w.state.stats.harvest.fish || 0}, stored ${w.have('fish')}`);
   // achievements & hats
   w.state.stats.harvest.wheat = 20000;
@@ -849,6 +845,11 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   db.me = 'u1'; localStorage.removeItem('meadow.session'); await Cloud.signIn('t@x', 'pw');
   const got = await Cloud.openGifts(mine.code);
   ok(got.length === 1 && got[0].from_name === 'Pip' && (await Cloud.openGifts(mine.code)).length === 0, 'Gifts open once, never twice');
+  // a shared farm (no storage, no counters) runs for a good while without tripping up
+  const pal = fresh(); rich(pal, 9); for (const p of pal.plots) { p.st = 'ripe'; p.p = 1; }
+  const visit = new World(migrate(JSON.parse(JSON.stringify(farmSnapshot(pal.state)))));
+  let crash = ''; try { run(visit, 600, false, 0.05); } catch (e) { crash = e.message; }
+  ok(!crash && visit.state.inv && Object.keys(visit.state.inv).length > 0, 'A friend’s farm keeps working while you visit (no freeze)', crash || JSON.stringify(visit.state.inv));
   const r = E.giftReward(10);
   ok(r.coins > 0 && r.coins < 5000, 'A gift basket’s size comes from the farm that opens it', JSON.stringify(r));
   await Cloud.unshare();

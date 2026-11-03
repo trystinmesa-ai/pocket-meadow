@@ -79,6 +79,11 @@ class Game {
   focus(x, y) { this.R.cam.x = x; this.R.cam.y = y; this.R.clampCam(); }
 
   loop(t) {
+    // ask for the next frame first, so one bad frame can never stop the game
+    requestAnimationFrame((n) => this.loop(n));
+    try { this.frame(t); } catch (e) { console.error(e); }
+  }
+  frame(t) {
     const real = (t - this.lastFrame) / 1000;
     this.lastFrame = t;
     if (!this.busy) {
@@ -89,7 +94,11 @@ class Game {
         while (left > 1e-6) {
           const d = Math.min(0.05, left);
           step(this.world, d, false, Date.now());
-          if (this.visitWorld) { step(this.visitWorld, d, false, Date.now()); this.visitWorld.events.length = 0; }
+          if (this.visitWorld) {
+            // a friend's farm runs here just for show; if it ever trips up, it pauses instead of freezing the game
+            try { if (!this.visitWorld.paused) step(this.visitWorld, d, false, Date.now()); } catch (e) { console.error(e); this.visitWorld.paused = true; }
+            this.visitWorld.events.length = 0;
+          }
           left -= d;
         }
         this.world.state.stats.play += dt;
@@ -105,7 +114,6 @@ class Game {
     }
     this.input.tick();
     this.R.draw(Math.min(0.1, real));
-    requestAnimationFrame((n) => this.loop(n));
   }
 
   /** Fast-forward the farm to `now`, with a progress screen for long gaps. */
@@ -277,6 +285,7 @@ class Game {
     const state = migrate(JSON.parse(JSON.stringify(row.farm)));
     state.simTime = Date.now();
     state.settings = { ...state.settings, helpers: true };
+    state.coins = 1e6; // only so their farmhands keep planting while you watch; never saved
     const vw = new World(state);
     vw.visiting = true;
     if (!this.visitWorld) this.homeCam = { ...this.R.cam };
