@@ -14,7 +14,7 @@ import { pathThumb, soilTile } from './art/land.js';
 import { workerFrame, petFrame } from './art/chars.js';
 import { fmtShort } from './render.js';
 import * as Cloud from './cloud.js';
-import { exportSave, parseSave, farmSnapshot } from './save.js';
+import { exportSave, parseSave, farmSnapshot, saveLocal } from './save.js';
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 import { seasonAt, seasonDaysLeft, festivalOn, untilFestival, inSeason, canPlantNow } from './seasons.js';
 import { SEASONS, SEASON_BONUS, PETS, MAX_PETS, BUNDLE_ROOMS, ALL_BUNDLES_REWARD, MATS, matsFor, upgMatsFor, buildTime, needsBuilding,
@@ -350,6 +350,7 @@ export class UI {
     this.toast(`Goal complete! +${fmt(st.g.reward)} coins`, 'good');
     this.coinPop($('#goal'));
     this.g.dirty();
+    saveLocal(this.s); // claimed goals are saved straight away
   }
 
   // ---------- sheets ----------

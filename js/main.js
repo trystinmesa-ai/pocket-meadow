@@ -93,7 +93,8 @@ class Game {
         let left = dt;
         while (left > 1e-6) {
           const d = Math.min(0.05, left);
-          step(this.world, d, false, Date.now());
+          // a slip in the simulation must never stop saving or drawing
+          try { step(this.world, d, false, Date.now()); } catch (e) { this.reportError(e); }
           if (this.visitWorld) {
             // a friend's farm runs here just for show; if it ever trips up, it pauses instead of freezing the game
             try { if (!this.visitWorld.paused) step(this.visitWorld, d, false, Date.now()); } catch (e) { console.error(e); this.visitWorld.paused = true; }
@@ -102,10 +103,10 @@ class Game {
           left -= d;
         }
         this.world.state.stats.play += dt;
-        for (const e of this.world.events) this.ui.handle(e);
+        for (const e of this.world.events) try { this.ui.handle(e); } catch (err) { this.reportError(err); }
         this.world.events.length = 0;
         this.saveT += dt; this.cloudT += dt; this.uiT += dt;
-        if (this.uiT > 0.25) { this.uiT = 0; this.ui.tick(); }
+        if (this.uiT > 0.25) { this.uiT = 0; try { this.ui.tick(); } catch (e) { this.reportError(e); } }
         if (this.saveT > LOCAL_SAVE_EVERY) { this.saveT = 0; saveLocal(this.world.state); }
         if (this.cloudT > CLOUD_SAVE_EVERY) { this.cloudT = 0; this.syncNow(); }
         this.friendT = (this.friendT ?? FRIENDS_EVERY - 20) + dt;
@@ -139,7 +140,20 @@ class Game {
     }
   }
 
-  dirty() { Cloud.markDirty(); }
+  /** Something changed: save it right away (a moment later, so a burst of taps is one save). */
+  dirty() {
+    Cloud.markDirty();
+    clearTimeout(this.saveSoon);
+    this.saveSoon = setTimeout(() => { if (this.world) saveLocal(this.world.state); this.saveT = 0; }, 300);
+  }
+  /** Note an unexpected error once per session, so it can be reported; the farm keeps running and saving. */
+  reportError(e) {
+    console.error(e);
+    try { localStorage.setItem('meadow.lastError', JSON.stringify({ at: new Date().toISOString(), msg: String(e && e.stack || e).slice(0, 600) })); } catch {}
+    if (this.errShown) return;
+    this.errShown = true;
+    this.ui?.toast(`Oops, something went wrong (${String(e && e.message || e).slice(0, 80)}). Your farm is still saved. Please tell the developer.`, 'bad');
+  }
 
   persist(leaving) {
     if (!this.world) return;
