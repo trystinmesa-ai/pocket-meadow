@@ -125,6 +125,16 @@ function waitingAll(world) {
 function onFarm(world, k, except) {
   return world.have(k) + (waitingAll(world)[k] || 0) - (except && !except._cc ? waiting(world, except, k) : 0);
 }
+/**
+ * The ingredient this recipe would take from a prioritized order, if any.
+ * It's fine when the order needs what the recipe makes (wheat into wanted flour).
+ */
+export function savedForOrder(world, r) {
+  const o = world.priorityOrder();
+  if (!o || world.orderShort(r.out) > 0) return null;
+  for (const k in r.in) { const n = world.orderNeed(k); if (n && world.haveAll(k) - r.in[k] < n) return k; }
+  return null;
+}
 /** Is there somewhere to put this item right now: the barn's fair share, or a workshop pantry that wants it? */
 export function canStore(world, item) {
   if (world._csT !== world.time) { world._csT = world.time; world._cs = new Map(); }
@@ -166,6 +176,11 @@ export function curRecipe(world, b) {
     const top = Object.keys(b.inp).sort((a, c) => b.inp[c] - b.inp[a])[0];
     const drain = list.find((r) => r.in[top] && hasInputs(b, r));
     if (drain) { if (drain !== cur) switchRecipe(world, b, drain); return drain; }
+  }
+  // saving an ingredient for a prioritized order: make something else in the meantime
+  if (cur && savedForOrder(world, cur)) {
+    const alt = list.find((r) => hasInputs(b, r) && !savedForOrder(world, r));
+    if (alt) { switchRecipe(world, b, alt); return alt; }
   }
   if (cur && (hasInputs(b, cur) || feasible(world, b, cur))) return cur;
   let best = null;
@@ -509,7 +524,9 @@ const FIND = {
   harvest(world, w) {
     if (!world.avail.ripe) return null;
     // a crop with no room waits ripe in its field, so slower crops still get their space
-    const p = nearest(world.plots, w, (o) => o.st === 'ripe' && !o._c && !bad(world, o) && canStore(world, o.crop));
+    const ready = (o) => o.st === 'ripe' && !o._c && !bad(world, o) && canStore(world, o.crop);
+    // crops a prioritized order still needs come first
+    const p = nearest(world.plots, w, (o) => ready(o) && world.orderShort(o.crop) > 0) || nearest(world.plots, w, ready);
     if (!p) return null;
     const job = new Job(w, 'harvest', `Harvesting ${ITEMS[p.crop].name}`);
     harvestSteps(world, w, job, p);
@@ -637,7 +654,8 @@ const FIND = {
   },
   feed(world, w) {
     if (!world.avail.feedNeed) return null;
-    const a = nearest(world.animals, w, (o) => !o.off && !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && onFarm(world, DEFS[o.type].animal.feed) > 0);
+    const a = nearest(world.animals, w, (o) => !o.off && !o._cs && !bad(world, o) && o.feed < feedCap(o) - 2 && onFarm(world, DEFS[o.type].animal.feed) > 0
+      && !savedForOrder(world, { in: { [DEFS[o.type].animal.feed]: 1 }, out: DEFS[o.type].animal.item }));
     if (!a) return null;
     const A = DEFS[a.type].animal;
     if (!world.have(A.feed)) {
@@ -713,7 +731,7 @@ const FIND = {
       if (o.off || o._co || bad(world, o)) return false;
       if (outTotal(o) >= outCap(o)) return false;
       const r = curRecipe(world, o);
-      return r && (o.prog > 0 || hasInputs(o, r));
+      return r && (o.prog > 0 || (hasInputs(o, r) && !savedForOrder(world, r)));
     });
     if (!b) return null;
     const [x, y] = doorTile(b);
@@ -993,7 +1011,7 @@ function doGo(world, w, s, dt, fast) {
 function doCraft(world, w, s, dt) {
   const b = s.b;
   const r = world.byId.has(b.id) ? curRecipe(world, b) : null;
-  const stop = !r || s.done >= s.max || (b.prog <= 0 && (b.off || !hasInputs(b, r) || outTotal(b) >= outCap(b)));
+  const stop = !r || s.done >= s.max || (b.prog <= 0 && (b.off || !hasInputs(b, r) || outTotal(b) >= outCap(b) || savedForOrder(world, r)));
   if (stop) { w._hidden = false; b._busy = false; w.job.i++; return dt; }
   if (b.prog <= 0) {
     for (const k in r.in) { b.inp[k] -= r.in[k]; if (!b.inp[k]) delete b.inp[k]; }

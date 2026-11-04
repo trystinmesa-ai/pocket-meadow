@@ -4,7 +4,7 @@ import { ACHIEVEMENTS, achReward, HATS, discovered, DEFS, ITEMS, CROPS, USES, SO
   MAX_WORKER_LEVEL, workerXpNeeded, MAP, TILE, parcelCost, parcelLevel, levelReward, MAX_LEVEL } from './data.js';
 import { doorTile, sellPrice, storeCap, cropUnlocked, PW } from './world.js';
 import * as E from './economy.js';
-import { curRecipe, recipesFor, outTotal, outCap, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime, PANTRY, pantryCap, pantryUsed, pantryItems } from './sim.js';
+import { savedForOrder, curRecipe, recipesFor, outTotal, outCap, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime, PANTRY, pantryCap, pantryUsed, pantryItems } from './sim.js';
 import { img, itemImg, iconURL } from './art/icons.js';
 import { itemURL } from './art/items.js';
 import { buildingSprite } from './art/buildings.js';
@@ -240,6 +240,7 @@ export class UI {
       case 'sellq': this.sellNow(d.key, !!d.all, el); break;
       // orders
       case 'fill': { const o = s.orders.find((x) => x.id === +d.id); if (o && fail(E.fillOrder(w, o))) { this.toast(`Order delivered! +${fmt(o.reward)} coins`, 'good'); this.coinPop(el); this.g.dirty(); } this.renderSheet(); break; }
+      case 'prioritize': { const o = s.orders.find((x) => x.id === +d.id); if (o) { E.prioritizeOrder(w, o); this.toast(s.priority ? `${o.from}’s order comes first now` : 'Back to the normal fair share'); this.g.dirty(); this.renderSheet(); } break; }
       case 'skip': { const o = s.orders.find((x) => x.id === +d.id); if (o) { E.skipOrder(w, o); this.g.dirty(); this.renderSheet(); } break; }
       // upgrades
       case 'upg': if (fail(E.buyUpgrade(w, d.id))) { this.toast(`${UPGRADES.find((u) => u.id === d.id).name} upgraded!`, 'good'); this.g.dirty(); this.renderSheet(); } break;
@@ -678,16 +679,26 @@ export class UI {
     for (const o of s.orders) {
       const ok = E.canFill(w, o), v = VILLAGERS.find((x) => x.id === o.who);
       const fav = (k) => v && v.likes.includes(k) ? ` <span class="fav" title="${esc(v.name)} loves this">${img('heart')}</span>` : '';
-      html += `<div class="order ${ok ? 'ready' : ''}"><div class="of">${esc(o.from)} would like:${v ? ` <span class="hearts">${this.heartsHTML(s.friends[v.id])}</span>` : ''}</div><div class="oi">${o.items.map((x) => {
+      const prio = s.priority === o.id;
+      html += `<div class="order ${ok ? 'ready' : ''} ${prio ? 'priority' : ''}"><div class="of">${esc(o.from)} would like:${v ? ` <span class="hearts">${this.heartsHTML(s.friends[v.id])}</span>` : ''}</div><div class="oi">${o.items.map((x) => {
         const have = w.haveAll(x.item);
         return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}${fav(x.item)}</span>`;
       }).join('')}</div>
         <div class="row"><span>Reward ${coin(o.reward)} <span class="xp">+${fmt(o.xp)} XP</span>${v ? ` <span class="xp">+${E.friendPoints(o)} ${img('heart')}</span>` : ''}</span>
-        <span><button class="btn small" data-act="skip" data-id="${o.id}">Skip</button> <button class="btn small green" data-act="fill" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></span></div></div>`;
+        <span><button class="btn small" data-act="skip" data-id="${o.id}">Skip</button> <button class="btn small green" data-act="fill" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></span></div>
+        <div class="row prio"><span class="hint" data-live="pr${o.id}">${prio ? this.priorityText(o) : 'Put this order first: its items can go over the fair share.'}</span><button class="btn small ${prio ? 'gold' : ''}" data-act="prioritize" data-id="${o.id}">${img('star')} ${prio ? 'Prioritized' : 'Prioritize'}</button></div></div>`;
     }
     html += `<p class="hint" data-live="next">${this.nextOrderText()}</p>`;
     html += `<div class="row center"><button class="btn small" data-act="movefixed" data-type="board">${img('move')} Move the notice board</button></div>`;
     return html;
+  }
+  /** What a prioritized order is still waiting for, and whether the barn has the space for it. */
+  priorityText(o) {
+    const w = this.w, short = o.items.map((x) => [x.item, w.orderShort(x.item)]).filter(([, n]) => n > 0);
+    if (!short.length) return 'Everything is ready to deliver!';
+    const total = short.reduce((a, [, n]) => a + n, 0);
+    const room = total > w.free() ? ` Make ${fmt(total - w.free())} more space in the barn so it all fits.` : '';
+    return `Saving up: ${short.map(([k, n]) => `${fmt(n)} more ${ITEMS[k].name}`).join(', ')}.${room}`;
   }
   heartsHTML(pts = 0) {
     const h = heartsOf(pts);
@@ -743,6 +754,9 @@ export class UI {
   }
   live_orders() {
     const w = this.w, out = { next: this.nextOrderText() };
+    const po = w.priorityOrder(); if (po) out[`pr${po.id}`] = this.priorityText(po);
+    // Deliver lights up as soon as an order can be filled
+    for (const o of this.s.orders) { const b = $(`#sheet [data-act="fill"][data-id="${o.id}"]`); if (b) { const ok = E.canFill(w, o); b.disabled = !ok; b.closest('.order').classList.toggle('ready', ok); } }
     const v = merchantHere(w); if (v) out.mleft = fmtTime((v.end - Date.now()) / 1000);
     for (const o of this.s.orders) for (const x of o.items) out[`o${o.id}${x.item}`] = `${fmt(Math.min(w.haveAll(x.item), x.qty))}/${x.qty}`;
     return out;
@@ -1169,6 +1183,7 @@ export class UI {
         if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%${o.off ? ' (stops after this one)' : ''}`;
         else if (o.off) st = 'Not making anything. Its pantry can still be used for orders, selling and other workshops.';
         else if (!r) st = 'Nothing to make yet: waiting for ingredients';
+        else if (savedForOrder(w, r)) st = `Paused: saving ${ITEMS[savedForOrder(w, r)].name.toLowerCase()} for your prioritized order`;
         else if (n >= outCap(o)) st = 'Output full: waiting for pickup';
         else if (o.prog > 0) st = `Paused at ${Math.floor(o.prog * 100)}%: waiting for an artisan`;
         else {

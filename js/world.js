@@ -228,8 +228,21 @@ export class World {
     let held = 0;
     for (const x of this.producing || []) if (x !== item) held += Math.max(0, share - this.have(x));
     // its own share always fits while there is any free space (many products can over-book the barn)
-    return Math.max(0, free - held, Math.min(free, share - this.have(item)));
+    const fair = Math.max(0, free - held, Math.min(free, share - this.have(item)));
+    // a prioritized order comes first: its items may pass their share, and everything else leaves it the space
+    const o = this.priorityOrder();
+    if (!o) return fair;
+    const short = this.orderShort(item);
+    if (short > 0) return Math.max(fair, Math.min(free, short));
+    let kept = 0;
+    for (const x of o.items) kept += this.orderShort(x.item);
+    return Math.max(0, Math.min(fair, free - kept));
   }
+  /** The village order you've asked the farm to put first, if any. */
+  priorityOrder() { const id = this.state.priority; return id ? this.state.orders.find((o) => o.id === id) || null : null; }
+  /** How many of an item the prioritized order asks for, and how many more it still needs. */
+  orderNeed(item) { const x = this.priorityOrder()?.items.find((i) => i.item === item); return x ? x.qty : 0; }
+  orderShort(item) { const n = this.orderNeed(item); return n ? Math.max(0, n - this.haveAll(item)) : 0; }
   fairShare() { return Math.max(6, Math.floor(this.capacity / Math.max(1, (this.producing || new Set()).size))); }
   takeItem(item, qty) {
     const got = Math.min(qty, this.have(item));

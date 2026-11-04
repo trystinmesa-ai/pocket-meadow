@@ -924,6 +924,49 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(S.curRecipe(w2, mill).out === 'flour', 'An over-full pantry makes something that uses up the extra');
 }
 
+// 33. a prioritized order may go over the fair share until it's delivered
+{
+  const S = await import('../js/sim.js');
+  const D2 = await import('../js/data.js');
+  const w = empty(), s = w.state; rich(w, 12, 1e6);
+  for (let x = 17; x < 25; x++) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y: 21, crop: 'wheat' }));
+  for (let x = 17; x < 20; x++) s.objects.push(initObject({ id: s.nextId++, type: 'plot', x, y: 22, crop: 'carrot' }));
+  newWorker(s, 'farmer', 'Pip'); newWorker(s, 'farmer', 'Fern'); newWorker(s, 'hauler', 'Bea');
+  for (const x of s.workers) { x.x = 20.5; x.y = 20.5; }
+  w.rebuild();
+  run(w, 3 * 3600, true, 2);
+  const share = w.fairShare();
+  ok(w.have('wheat') <= share + w.fx.carry, 'Without priority wheat stays at its share', `${w.have('wheat')} / ${share}`);
+  // the barn is full of carrots and wheat: selling carrots makes the room the order needs
+  E.sell(w, 'carrot', w.have('carrot'));
+  const order = { id: 7001, from: 'Granny Elm', who: 'elm', items: [{ item: 'wheat', qty: 50 }], reward: 900, xp: 10 };
+  s.orders.push(order);
+  E.prioritizeOrder(w, order);
+  ok(w.orderShort('wheat') === 50 - w.haveAll('wheat') && w.roomFor('wheat') >= Math.min(w.free(), w.orderShort('wheat')), 'A prioritized order’s item can go past its share', `room ${w.roomFor('wheat')}`);
+  ok(w.roomFor('carrot') <= Math.max(0, w.free() - w.orderShort('wheat')), 'Other crops leave that space alone', `carrot room ${w.roomFor('carrot')}`);
+  run(w, 3600, true, 2);
+  ok(w.haveAll('wheat') >= 50 && w.have('wheat') > share, 'Wheat gathers past its fair share for the order', `wheat ${w.have('wheat')}, share ${share}`);
+  ok(w.haveAll('wheat') <= 50 + w.fx.carry * 3, 'It stops at what the order needs', `${w.haveAll('wheat')}`);
+  ok(E.canFill(w, order) && E.fillOrder(w, order) === '' && !s.priority, 'Delivering ends the priority');
+  ok(w.priorityOrder() === null && w.roomFor('wheat') <= Math.max(w.free() - Math.max(0, share - w.have('carrot')), share - w.have('wheat'), 0), 'Then wheat is back on the fair share');
+  // only one at a time, and tapping again cancels
+  const a = { id: 7002, from: 'A', items: [{ item: 'wheat', qty: 5 }], reward: 1, xp: 0 }, b = { id: 7003, from: 'B', items: [{ item: 'carrot', qty: 5 }], reward: 1, xp: 0 };
+  s.orders.push(a, b); E.prioritizeOrder(w, a); E.prioritizeOrder(w, b);
+  ok(w.priorityOrder() === b, 'Only one order is prioritized at a time');
+  E.prioritizeOrder(w, b); ok(!w.priorityOrder(), 'Tapping it again cancels');
+  E.prioritizeOrder(w, a); E.skipOrder(w, a); ok(!w.priorityOrder(), 'Skipping a prioritized order clears it');
+  // workshops and animals leave the ingredient alone, unless the order wants what they make
+  const w2 = empty(); rich(w2, 12, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w2, 'mill', x, y) === '') mill = w2.objAt(x, y);
+  mill.inp = { wheat: 9 }; const flour = D2.DEFS.mill.recipes.find((r) => r.out === 'flour');
+  const o2 = { id: 7004, from: 'A', items: [{ item: 'wheat', qty: 9 }], reward: 1, xp: 0 }; w2.state.orders.push(o2); E.prioritizeOrder(w2, o2);
+  ok(S.savedForOrder(w2, flour) === 'wheat', 'The mill won’t grind wheat a prioritized order needs');
+  o2.items.push({ item: 'flour', qty: 3 });
+  ok(S.savedForOrder(w2, flour) === null, 'Unless the order needs the flour too');
+  const back = migrate(JSON.parse(serialize(w2.state)));
+  ok(back.priority === o2.id, 'The priority is saved');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

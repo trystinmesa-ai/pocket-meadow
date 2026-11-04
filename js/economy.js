@@ -509,6 +509,7 @@ export function fillOrder(world, order) {
   const s = world.state;
   if (!canFill(world, order)) return 'Not enough on the farm';
   for (const x of order.items) world.takeAll(x.item, x.qty);
+  if (s.priority === order.id) delete s.priority; // back to the normal fair share
   s.orders.splice(s.orders.indexOf(order), 1);
   s.stats.orders++;
   befriend(world, order);
@@ -516,8 +517,14 @@ export function fillOrder(world, order) {
   if (s.orders.length < 3) s.nextOrderAt = Math.min(s.nextOrderAt, Date.now() + 2 * 60 * 1000);
   return '';
 }
+/** Put one order first (tap again to cancel). Its items can pass the fair share until it's delivered. */
+export function prioritizeOrder(world, order) {
+  const s = world.state;
+  if (s.priority === order.id) delete s.priority; else s.priority = order.id;
+}
 export function skipOrder(world, order) {
   const s = world.state;
+  if (s.priority === order.id) delete s.priority;
   s.orders.splice(s.orders.indexOf(order), 1);
   s.nextOrderAt = Math.max(s.nextOrderAt, Date.now() + 4 * 60 * 1000);
   return '';
