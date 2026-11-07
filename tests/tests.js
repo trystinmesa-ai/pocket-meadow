@@ -1046,6 +1046,32 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(!s2.priority, 'Tapping Prioritize again turns it off', String(s2.priority));
 }
 
+// 37. things can stand on paths
+{
+  const w = empty(); rich(w, 12, 1e6);
+  let at; for (let y = 10; y < 34 && !at; y++) for (let x = 8; x < 40 && !at; x++) if ([0, 1, 2, 3].every((i) => w.canPlace('lamp', x + i, y) === '' && !w.pathAt(x + i, y))) at = [x, y];
+  const [x, y] = at;
+  ok(E.place(w, 'path_brick', x, y) === '' && E.place(w, 'path_brick', x + 1, y) === '' && E.place(w, 'path_brick', x + 2, y) === '', 'Lay a brick path');
+  ok(E.place(w, 'lamp', x, y) === '', 'A lamp post can stand on a path');
+  ok(w.objAt(x, y).type === 'lamp' && w.pathAt(x, y).type === 'path_brick', 'Both are there, the path underneath');
+  ok(E.place(w, 'plot', x + 1, y) !== '', 'A field can’t go on a path');
+  ok(E.place(w, 'scarecrow', x + 1, y) === '' && E.place(w, 'hedge', x + 2, y) === '', 'Scarecrows and hedges can');
+  ok(!w.walkable(x, y) && w.tileSpeed(x + 3, y) === 1, 'Farmhands walk around a lamp on a path');
+  ok(E.place(w, 'path_brick', x, y) !== '', 'Can’t lay a second path on the same tile');
+  // removing takes what's on top first, then the path
+  const lamp = w.objAt(x, y); E.remove(w, lamp);
+  ok(!w.objAt(x, y) && w.pathAt(x, y) && w.walkable(x, y) && w.tileSpeed(x, y) > 1, 'Removing the lamp leaves the path');
+  // a building on a path, moved away, leaves the path behind
+  let m; for (let yy = 10; yy < 34 && !m; yy++) for (let xx = 8; xx < 40 && !m; xx++) if (w.canPlace('mill', xx, yy) === '' && w.pathAt(xx, yy) === undefined && w.canPlace('path_stone', xx, yy) === '' && w.canPlace('path_stone', xx + 1, yy) === '') { E.place(w, 'path_stone', xx, yy); E.place(w, 'path_stone', xx + 1, yy); if (E.place(w, 'mill', xx, yy) === '') m = w.objAt(xx, yy); }
+  ok(m && m.type === 'mill' && w.pathAt(m.x, m.y), 'Buildings can go on paths too');
+  // a path can be laid under something that already stands there
+  let b; for (let yy = 10; yy < 34 && !b; yy++) for (let xx = 8; xx < 40 && !b; xx++) if (!w.pathAt(xx, yy) && E.place(w, 'bench', xx, yy) === '') b = w.objAt(xx, yy);
+  ok(E.place(w, 'path_wood', b.x, b.y) === '', 'A path can be laid under a bench');
+  // saves keep both
+  const w2 = new World(JSON.parse(JSON.stringify(w.state)));
+  ok(w2.objAt(b.x, b.y).type === 'bench' && w2.pathAt(b.x, b.y).type === 'path_wood', 'Both survive a save and load');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

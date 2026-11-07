@@ -96,7 +96,7 @@ export function paintTerrain(world, season = 'summer') {
   return cv;
 }
 
-const isPath = (world, x, y) => { const o = world.objAt(x, y); return !!o && DEFS[o.type].cat === 'path'; };
+const isPath = (world, x, y) => !!world.pathAt(x, y);
 
 function drawPath(P, world, o) {
   const ox = o.x * TILE, oy = o.y * TILE;
@@ -198,7 +198,7 @@ export function pathThumb(type) {
   return cached(`pthumb:${type}`, () => {
     const cv = canvas(48, 16);
     const P = pen(cv);
-    const fake = { objAt: (x, y) => (y === 0 && x >= 0 && x <= 2 ? { type } : null) };
+    const fake = { pathAt: (x, y) => (y === 0 && x >= 0 && x <= 2 ? { type } : null) };
     for (let x = 0; x < 3; x++) drawPath(P, fake, { type, x, y: 0 });
     const out = canvas(16, 16);
     out.getContext('2d').drawImage(cv, 16, 0, 16, 16, 0, 0, 16, 16);

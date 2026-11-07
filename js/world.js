@@ -133,6 +133,7 @@ export class World {
     this.state = state;
     this.terrain = makeTerrain(state.seed);
     this.occ = new Int32Array(MAP.w * MAP.h);
+    this.pocc = new Int32Array(MAP.w * MAP.h); // paths lie under everything else
     this.events = [];
     this.rebuild();
   }
@@ -141,7 +142,7 @@ export class World {
 
   rebuild() {
     const s = this.state;
-    this.occ.fill(0);
+    this.occ.fill(0); this.pocc.fill(0);
     this.byId = new Map();
     this.plots = []; this.trees = []; this.bldgs = []; this.storages = []; this.wells = []; this.sprinklers = [];
     this.animals = []; this.hives = []; this.lights = []; this.sites = []; this.debris = []; this.greenhouses = [];
@@ -151,7 +152,8 @@ export class World {
     for (const o of s.objects) {
       const d = DEFS[o.type];
       this.byId.set(o.id, o);
-      for (let y = o.y; y < o.y + d.h; y++) for (let x = o.x; x < o.x + d.w; x++) if (inMap(x, y)) this.occ[idx(x, y)] = o.id;
+      const layer = d.cat === 'path' ? this.pocc : this.occ;
+      for (let y = o.y; y < o.y + d.h; y++) for (let x = o.x; x < o.x + d.w; x++) if (inMap(x, y)) layer[idx(x, y)] = o.id;
       if (d.door) this.doors.add(idx(...doorTile(o)));
       // a building still going up does nothing yet, but keeps its entrance clear
       if (o.build > 0) { this.sites.push(o); continue; }
@@ -193,7 +195,12 @@ export class World {
     if (!inMap(x, y)) return false;
     return this.state.map.owned[Math.floor(y / MAP.parcel) * PW + Math.floor(x / MAP.parcel)];
   }
+  /** What stands on a tile (a building, decoration, field...), not counting the path under it. */
   objAt(x, y) { return inMap(x, y) ? this.byId.get(this.occ[idx(x, y)]) : undefined; }
+  /** The path on a tile, if there is one. */
+  pathAt(x, y) { return inMap(x, y) ? this.byId.get(this.pocc[idx(x, y)]) : undefined; }
+  /** The thing on top: what stands there, or else the path. */
+  topAt(x, y) { return this.objAt(x, y) || this.pathAt(x, y); }
 
   walkable(x, y) {
     if (!this.ownedTile(x, y) || this.terrain[idx(x, y)] !== 0) return false;
@@ -202,8 +209,8 @@ export class World {
   }
   // Path speed multiplier for a tile.
   tileSpeed(x, y) {
-    const o = this.objAt(x, y);
-    return o && DEFS[o.type].speed ? DEFS[o.type].speed : 1;
+    const o = this.pathAt(x, y);
+    return o ? DEFS[o.type].speed || 1 : 1;
   }
 
   // ---------- inventory ----------
@@ -312,8 +319,13 @@ export class World {
     for (let ty = y; ty < y + d.h; ty++) for (let tx = x; tx < x + d.w; tx++) {
       if (!inMap(tx, ty) || !this.ownedTile(tx, ty)) return 'Not your land yet';
       if (this.terrain[idx(tx, ty)] !== 0) return 'Can’t build on water';
-      const o = this.objAt(tx, ty);
+      // paths and everything else live on separate layers: things can stand on a path,
+      // but fields and debris stay off them
+      const isPath = d.cat === 'path';
+      const o = isPath ? this.pathAt(tx, ty) : this.objAt(tx, ty);
       if (o && o.id !== ignoreId) return 'Something is already here';
+      if (isPath) { const on = this.objAt(tx, ty); if (on && on.id !== ignoreId && ['field', 'debris'].includes(DEFS[on.type].cat)) return 'Something is already here'; }
+      else if (['field', 'debris'].includes(d.cat)) { const p = this.pathAt(tx, ty); if (p && p.id !== ignoreId) return 'There’s a path here'; }
       if (!d.walk && this.doors.has(idx(tx, ty))) {
         const owner = this.state.objects.find((b) => DEFS[b.type].door && b.id !== ignoreId && idx(...doorTile(b)) === idx(tx, ty));
         if (owner) return `Keep the ${DEFS[owner.type].name} entrance clear`;

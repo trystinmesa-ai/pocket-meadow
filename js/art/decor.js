@@ -393,25 +393,85 @@ export function decorSprite(type, season = 'summer') {
 export const smallWindmillSails = (f) => millSails(f, true);
 
 // ---------- fences (mask: 1 N, 2 E, 4 S, 8 W) ----------
+// ---------- hedges and walls ----------
+// Drawn as a solid strip seen from above: a top face, and a front face where
+// nothing continues below. Each piece has a centre block and an arm toward
+// every neighbour, so runs join up and corners make proper L and T shapes.
+// Textures repeat every 16 px, so neighbouring pieces line up without seams.
+const FX0 = 3, FX1 = 13, FT = 4, FB = 12; // centre block (sprite px); top face rows FT..FB
+function blockFence(P, mask, type) {
+  const N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
+  const wall = type === 'wall_stone', H = wall ? 8 : 7; // front face height
+  const top = (x, y) =>
+    (x >= FX0 && x < FX1 && y >= (N ? 0 : FT) && y < (S ? 22 : FB)) ||
+    (y >= FT && y < FB && x >= (W ? 0 : FX0) && x < (E ? 16 : FX1));
+  // the front face hangs below the top face's bottom edge, except under a southern arm
+  const front = (x, y) => y >= FB && y < FB + H && top(x, FB - 1) && !(S && x >= FX0 && x < FX1);
+  const h = (x, y, k) => noise(x & 15, y & 15, k);
+  // soft shadow on the ground under the front
+  for (let x = 0; x < 16; x++) if (front(x, FB + H - 1)) P.px(x, FB + H + 1, 'rgba(30,50,20,0.25)');
+  for (let y = 0; y < 22; y++) for (let x = 0; x < 16; x++) {
+    if (top(x, y)) {
+      const edgeN = !top(x, y - 1) && y > 0, edgeW = !top(x - 1, y) && x > 0, edgeE = !top(x + 1, y) && x < 15;
+      if (wall) {
+        // flat capstones: big slabs with mortar lines, staggered
+        const row = (y >> 2), off = row & 1 ? 4 : 0;
+        const mortar = (y & 3) === 3 || ((x + off) & 7) === 7;
+        let c = mortar ? C.stoneD : h((x + off) >> 3, row, 5) < 0.5 ? C.stoneL : '#e6e1d0';
+        if (edgeN) c = '#f0ecdc';
+        if (edgeW || edgeE) c = C.stoneD;
+        P.px(x, y, c);
+      } else {
+        // leafy top: scalloped outline, clumps of light and dark leaves
+        if (edgeN && (x & 3) === 0) continue;
+        const n = h(x, y, 3);
+        let c = n < 0.22 ? C.leafL : n > 0.84 ? C.leafD : C.leaf;
+        if (((x >> 2) + (y >> 2)) & 1 && n > 0.6) c = C.leafD; // clumpy shading
+        if (edgeN) c = C.leafL;
+        if (edgeW || edgeE) c = C.leafD;
+        P.px(x, y, c);
+      }
+    } else if (front(x, y)) {
+      const d = y - FB, edgeW = !front(x - 1, y) && x > 0, edgeE = !front(x + 1, y) && x < 15;
+      let c;
+      if (wall) {
+        // stone blocks in running bond, darker toward the ground
+        const row = d >> 2 | 0, off = row & 1 ? 4 : 0;
+        const mortar = (d & 3) === 3 || ((x + off) & 7) === 0;
+        c = mortar ? C.stoneDD : h((x + off) >> 3, row, 9) < 0.5 ? C.stone : C.stoneD;
+        if (d === 0) c = C.stoneDD; // lip under the cap
+        if (!mortar && (d & 3) === 0 && d > 0) c = shade(c, 0.08);
+      } else {
+        const n = h(x, y, 4);
+        c = n < 0.18 ? C.leaf : n > 0.8 ? C.leafDD : C.leafD;
+        if (d === 0) c = C.leafDD;
+        if (d === H - 1) c = C.leafDD;
+      }
+      if (edgeW || edgeE) c = wall ? C.stoneDD : C.leafDD;
+      P.px(x, y, c);
+    }
+  }
+  // outline only where the strip really ends (the sprite outline would draw seams between pieces)
+  const solid = (x, y) => top(x, y) || front(x, y);
+  const ol = wall ? '#4a463e' : '#24401f';
+  for (let y = -1; y <= 22; y++) for (let x = -1; x <= 16; x++) {
+    if (solid(x, y) || (x < 0 && W) || (x > 15 && E) || (y < 0 && N) || (y > 21 && S)) continue;
+    if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) P.px(x, y, ol);
+  }
+  if (type === 'rosehedge') {
+    // roses dotted on the same repeating grid, top and front
+    for (let y = 0; y < 22; y++) for (let x = 0; x < 16; x++) {
+      if (h(x, y, 7) < 0.045 && top(x, y) && top(x + 1, y) && top(x, y + 1)) { P.px(x, y, '#d9345a'); P.px(x + 1, y, '#f6a8c8'); P.px(x, y + 1, '#b02a4a'); }
+      else if (h(x, y, 8) < 0.04 && front(x, y) && front(x + 1, y) && y > FB) { P.px(x, y, '#d9345a'); P.px(x + 1, y, '#f6a8c8'); }
+    }
+  }
+}
+
 export function fenceSprite(type, mask) {
+  const block = type === 'hedge' || type === 'rosehedge' || type === 'wall_stone';
   return cached(`fence:${type}:${mask}`, () => sprite(16, 22, (P) => {
     const N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
-    if (type === 'hedge') {
-      const x0 = W ? 0 : 2, x1 = E ? 16 : 14, y0 = N ? 0 : 6;
-      P.r(x0, y0, x1 - x0, 22 - y0 - (S ? 0 : 2), C.leafD);
-      P.r(x0, y0, x1 - x0, 14 - (N ? 0 : 6) + (N ? 6 : 0), C.leaf);
-      for (let i = 0; i < 6; i++) P.px(x0 + ((noise(i, mask, 3) * (x1 - x0)) | 0), y0 + 1 + ((noise(i, mask, 4) * 8) | 0), C.leafL);
-      P.hl(x0, 21 - (S ? 0 : 2), x1 - x0, C.leafDD);
-      return;
-    }
-    if (type === 'rosehedge') {
-      const x0 = W ? 0 : 2, x1 = E ? 16 : 14, y0 = N ? 0 : 6;
-      P.r(x0, y0, x1 - x0, 22 - y0 - (S ? 0 : 2), C.leafD);
-      P.r(x0, y0, x1 - x0, 14 - (N ? 0 : 6) + (N ? 6 : 0), C.leaf);
-      for (let i = 0; i < 5; i++) { const x = x0 + 1 + ((noise(i, mask, 7) * (x1 - x0 - 3)) | 0), y = y0 + 1 + ((noise(i, mask, 8) * 9) | 0); P.r(x, y, 2, 2, i % 2 ? '#d9345a' : '#f6a8c8'); }
-      P.hl(x0, 21 - (S ? 0 : 2), x1 - x0, C.leafDD);
-      return;
-    }
+    if (type === 'hedge' || type === 'rosehedge' || type === 'wall_stone') { blockFence(P, mask, type); return; }
     if (type === 'fence_iron') {
       const bar = '#3e3a4a', hi = '#6a6478';
       if (W) { P.r(0, 9, 8, 1, bar); P.r(0, 17, 8, 1, bar); }
@@ -419,15 +479,6 @@ export function fenceSprite(type, mask) {
       for (const x of (W ? [1, 4] : []).concat(E ? [11, 14] : [])) { P.vl(x, 7, 13, bar); P.px(x, 6, C.gold); }
       if (N) P.vl(7, 0, 8, bar);
       P.r(6, 5, 4, 16, bar); P.vl(7, 6, 14, hi); P.r(6, 3, 4, 2, C.gold);
-      return;
-    }
-    if (type === 'wall_stone') {
-      const x0 = W ? 0 : 3, x1 = E ? 16 : 13, y0 = N ? 0 : 10;
-      for (let y = y0; y < 22; y += 3) for (let x = x0 + (y % 6 ? 0 : 2); x < x1; x += 5) {
-        const w = Math.min(4, x1 - x);
-        P.r(x, y, w, 3, noise(x, y, mask) < 0.5 ? C.stone : C.stoneL); P.hl(x, y + 2, w, C.stoneD);
-      }
-      P.hl(x0, y0, x1 - x0, C.stoneL);
       return;
     }
     const white = type === 'fence_white';
@@ -440,7 +491,7 @@ export function fenceSprite(type, mask) {
       for (const x of (W ? [1, 4] : []).concat(E ? [11, 14] : [])) { P.r(x, 8, 2, 12, post); P.px(x, 7, post); P.vl(x + 1, 9, 11, postD); }
     }
     P.r(6, 8, 4, 13, post); P.vl(9, 9, 12, postD); P.hl(6, 8, 4, white ? '#ffffff' : C.woodL);
-  }));
+  }, { ol: !block }));
 }
 
 // ---------- pile basket (item drawn on top) ----------

@@ -1437,8 +1437,8 @@ export class UI {
   pickAt(sx, sy) {
     const hit = this.g.R.pick(sx, sy);
     if (hit) return hit;
-    const o = this.w.objAt(...this.tileAt(sx, sy));
-    return o && DEFS[o.type].cat === 'path' ? o : null;
+    const [tx, ty] = this.tileAt(sx, sy);
+    return this.w.pathAt(tx, ty) || null;
   }
 
   // ---------- the quarry scene ----------
@@ -1658,7 +1658,7 @@ export class UI {
   paintAt(tx, ty, single) {
     const m = this.mode, w = this.w;
     if (m.k === 'remove') {
-      const o = w.objAt(tx, ty);
+      const o = w.topAt(tx, ty); // whatever stands on a path goes first, then the path
       if (!o) return;
       const d = DEFS[o.type];
       if (single || ['path', 'fence', 'field', 'debris'].includes(d.cat) || (d.cat === 'decor' && d.w === 1)) {
