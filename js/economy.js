@@ -355,6 +355,18 @@ export function sellMat(world, k, n) {
   return coins;
 }
 
+/** Sell quarry finds from the finds shelf. */
+export function sellFind(world, k, n) {
+  const s = world.state, got = Math.min(n, s.finds[k] || 0);
+  if (got <= 0 || !ITEMS[k].find) return 0;
+  s.finds[k] -= got; if (!s.finds[k]) delete s.finds[k];
+  const coins = sellPrice(world, k) * got;
+  s.stats.sold[k] = (s.stats.sold[k] || 0) + got;
+  s.stats.soldCoins += coins;
+  earn(world, coins);
+  return coins;
+}
+
 // ---------- neighbours ----------
 /** The gift for reaching heart h (1-5) with a villager. Five hearts also adds their lasting favour. */
 export function heartGift(v, h) {

@@ -1072,6 +1072,18 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(w2.objAt(b.x, b.y).type === 'bench' && w2.pathAt(b.x, b.y).type === 'path_wood', 'Both survive a save and load');
 }
 
+// 38. quarry finds can be sold
+{
+  const w = empty(), s = w.state; s.finds = { fernfossil: 4, ammonite: 3 };
+  const c0 = s.coins + s.pendingCoins;
+  const got = E.sellFind(w, 'fernfossil', 3);
+  ok(got === sellPrice(w, 'fernfossil') * 3 && s.finds.fernfossil === 1, 'Selling finds pays and takes them off the shelf', `${got}, left ${s.finds.fernfossil}`);
+  ok(s.coins + s.pendingCoins > c0, 'The coins arrive');
+  ok(E.sellFind(w, 'ammonite', 99) === sellPrice(w, 'ammonite') * 3 && !('ammonite' in s.finds), 'Selling more than you have sells them all');
+  ok(E.sellFind(w, 'wheat', 1) === 0 && E.sellFind(w, 'ammonite', 1) === 0, 'Only finds you have can be sold this way');
+  ok(E.donate(w, 'fernfossil') === '' && !s.finds.fernfossil && s.museum.fernfossil, 'The last one can still go to the museum');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

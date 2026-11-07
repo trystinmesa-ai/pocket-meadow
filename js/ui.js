@@ -558,11 +558,22 @@ export class UI {
         ${this.sellerHTML('gold', k)}</div>`;
       html += '</div>';
     }
-    html += `<div class="row"><span class="hint">Building materials and finds are kept separately: see everything you own in the Inventory.</span><button class="btn small" data-act="sheet" data-v="inventory">${img('box')} Inventory</button></div>`;
+    const finds = Object.keys(s.finds).filter((k) => s.finds[k] > 0);
+    if (finds.length) {
+      html += `<h3>${img('pick')} Quarry finds</h3><p class="hint">Things your miners dug up, kept on the finds shelf. The museum would love one of each first; any extras sell here.</p><div class="list">`;
+      for (const k of finds) {
+        const want = !s.museum[k];
+        html += `<div class="irow">${infoImg(k, 'pi big')}<div class="ii"><div class="in">${ITEMS[k].name}</div><div class="iq"><b>${fmt(s.finds[k])}</b> · ${coin(sellPrice(w, k))}</div>
+          <div class="iq">${want ? `<button class="btn tiny green" data-act="donate" data-item="${k}">Give to museum</button>` : '<small>In the museum ✓</small>'}</div></div>
+          ${this.sellerHTML('find', k)}</div>`;
+      }
+      html += '</div>';
+    }
+    html += `<div class="row"><span class="hint">Building materials are kept in the material shed: see everything you own in the Inventory.</span><button class="btn small" data-act="sheet" data-v="inventory">${img('box')} Inventory</button></div>`;
     html += `<div class="row center"><button class="btn small" data-act="movefixed" data-type="market">${img('move')} Move the market stall</button></div>`;
     return { title: `${img('market', 'pi big')} Market`, html };
   }
-  sellHave(kind, k) { return kind === 'mat' ? this.w.mat(k) : kind === 'gold' ? this.s.gold[k] || 0 : this.w.haveAll(k); }
+  sellHave(kind, k) { return kind === 'mat' ? this.w.mat(k) : kind === 'gold' ? this.s.gold[k] || 0 : kind === 'find' ? this.s.finds[k] || 0 : this.w.haveAll(k); }
   /** − amount + · Sell · All, for barn goods (item), materials (mat) or gold-star produce (gold). */
   sellerHTML(kind, k) {
     const have = this.sellHave(kind, k), key = `${kind}:${k}`, q = Math.max(1, Math.min(have, this.sellQty[key] || 1));
@@ -572,7 +583,7 @@ export class UI {
   sellNow(key, all, el) {
     const [kind, k] = key.split(':'), have = this.sellHave(kind, k), w = this.w;
     const n = all ? have : Math.max(1, Math.min(have, this.sellQty[key] || 1));
-    const c = kind === 'mat' ? E.sellMat(w, k, n) : kind === 'gold' ? E.sellGold(w, k, n) : E.sell(w, k, n);
+    const c = kind === 'mat' ? E.sellMat(w, k, n) : kind === 'gold' ? E.sellGold(w, k, n) : kind === 'find' ? E.sellFind(w, k, n) : E.sell(w, k, n);
     if (c) { this.toast(`Sold ${fmt(n)} ${ITEMS[k].name} for ${fmt(c)} coins`, 'good'); this.coinPop(el); this.g.dirty(); }
     this.sellQty[key] = Math.max(1, Math.min(this.sellQty[key] || 1, this.sellHave(kind, k)));
     this.renderSheet();
