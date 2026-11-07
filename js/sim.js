@@ -165,6 +165,12 @@ function switchRecipe(world, b, r) {
 export function curRecipe(world, b) {
   const list = recipesFor(world.state, b);
   if (b.prog > 0 && b.batch) return list.find((r) => r.out === b.batch) || DEFS[b.type].recipes.find((r) => r.out === b.batch);
+  // a prioritized order comes first: make what it needs (even over a chosen recipe), then go back
+  const pw = world.priorityWanted();
+  if (pw && pw.size) {
+    const pr = list.find((r) => pw.has(r.out) && (hasInputs(b, r) || feasible(world, b, r)));
+    if (pr) { if (b.cur !== pr.out) switchRecipe(world, b, pr); return pr; }
+  }
   if (b.recipe !== 'auto') {
     const r = list.find((x) => x.out === b.recipe) || null;
     if (b.cur !== (r && r.out)) switchRecipe(world, b, r);
@@ -525,8 +531,9 @@ const FIND = {
     if (!world.avail.ripe) return null;
     // a crop with no room waits ripe in its field, so slower crops still get their space
     const ready = (o) => o.st === 'ripe' && !o._c && !bad(world, o) && canStore(world, o.crop);
-    // crops a prioritized order still needs come first
-    const p = nearest(world.plots, w, (o) => ready(o) && world.orderShort(o.crop) > 0) || nearest(world.plots, w, ready);
+    // crops a prioritized order still needs (or that go into what it needs) come first
+    const pw = world.priorityWanted();
+    const p = (pw && nearest(world.plots, w, (o) => ready(o) && pw.has(o.crop))) || nearest(world.plots, w, ready);
     if (!p) return null;
     const job = new Job(w, 'harvest', `Harvesting ${ITEMS[p.crop].name}`);
     harvestSteps(world, w, job, p);

@@ -1180,7 +1180,7 @@ export class UI {
         const r = curRecipe(w, o);
         const n = outTotal(o);
         let st;
-        if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%${o.off ? ' (stops after this one)' : ''}`;
+        if (o._busy) st = `Making ${ITEMS[o.batch || r.out].name}… ${Math.floor(o.prog * 100)}%${o.off ? ' (stops after this one)' : w.priorityWanted()?.has(o.batch || r.out) ? ' for your prioritized order' : ''}`;
         else if (o.off) st = 'Not making anything. Its pantry can still be used for orders, selling and other workshops.';
         else if (!r) st = 'Nothing to make yet: waiting for ingredients';
         else if (savedForOrder(w, r)) st = `Paused: saving ${ITEMS[savedForOrder(w, r)].name.toLowerCase()} for your prioritized order`;

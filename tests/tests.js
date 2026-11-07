@@ -967,6 +967,37 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(back.priority === o2.id, 'The priority is saved');
 }
 
+// 34. workshops make what a prioritized order needs
+{
+  const S = await import('../js/sim.js');
+  const w = empty(), s = w.state; rich(w, 12, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w, 'mill', x, y) === '') mill = w.objAt(x, y);
+  newWorker(s, 'hauler', 'Bea'); newWorker(s, 'artisan', 'Art'); for (const x of s.workers) { x.x = 20.5; x.y = 20.5; }
+  w.rebuild();
+  // the mill is busy on flour, with sugar cane waiting in the barn
+  mill.inp = { wheat: 9 }; mill.recipe = 'auto'; mill.cur = 'flour'; w.addItem('sugarcane', 12);
+  ok(S.curRecipe(w, mill).out === 'flour', 'Without priority the mill keeps on with flour');
+  const order = { id: 8001, from: 'Baker Rue', who: 'rue', items: [{ item: 'sugar', qty: 3 }], reward: 200, xp: 5 };
+  s.orders.push(order); E.prioritizeOrder(w, order);
+  ok(S.curRecipe(w, mill).out === 'sugar', 'Prioritizing an order for sugar switches the mill to sugar');
+  run(w, 600, true);
+  ok(w.haveAll('sugar') >= 3, 'And the sugar gets made', `sugar ${w.haveAll('sugar')}`);
+  ok(E.fillOrder(w, order) === '' && !w.priorityOrder(), 'The order can be delivered and the priority ends');
+  // even a chosen recipe gives way while the order needs something
+  mill.recipe = 'flour'; mill.cur = 'flour'; w.addItem('sugarcane', 6); w.takeAll('sugar', 99);
+  const o2 = { id: 8002, from: 'A', items: [{ item: 'sugar', qty: 2 }], reward: 1, xp: 0 }; s.orders.push(o2); E.prioritizeOrder(w, o2);
+  ok(S.curRecipe(w, mill).out === 'sugar', 'A workshop set to one recipe still helps a prioritized order');
+  E.prioritizeOrder(w, o2);
+  ok(S.curRecipe(w, mill).out === 'flour', 'Cancelling the priority puts it back on its chosen recipe');
+  // two steps down: a cake order makes the mill grind sugar
+  w.takeAll('sugar', 99); w.takeAll('flour', 99);
+  let bakery; for (let y = 10; y < 34 && !bakery; y++) for (let x = 8; x < 40 && !bakery; x++) if (E.place(w, 'bakery', x, y) === '') bakery = w.objAt(x, y);
+  const o3 = { id: 8003, from: 'B', items: [{ item: 'cake', qty: 2 }], reward: 1, xp: 0 }; s.orders.push(o3); E.prioritizeOrder(w, o3);
+  ok(w.priorityWanted().has('sugar') && w.priorityWanted().has('flour'), 'An order for cake asks for its sugar and flour', [...w.priorityWanted().keys()].join(' '));
+  mill.recipe = 'auto';
+  ok(['sugar', 'flour'].includes(S.curRecipe(w, mill).out), 'So the mill makes what the cake needs');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

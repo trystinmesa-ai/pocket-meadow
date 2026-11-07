@@ -232,10 +232,11 @@ export class World {
     // a prioritized order comes first: its items may pass their share, and everything else leaves it the space
     const o = this.priorityOrder();
     if (!o) return fair;
-    const short = this.orderShort(item);
+    const want = this.priorityWanted();
+    const short = want.get(item) || 0;
     if (short > 0) return Math.max(fair, Math.min(free, short));
     let kept = 0;
-    for (const x of o.items) kept += this.orderShort(x.item);
+    for (const n of want.values()) kept += n;
     return Math.max(0, Math.min(fair, free - kept));
   }
   /** The village order you've asked the farm to put first, if any. */
@@ -243,6 +244,26 @@ export class World {
   /** How many of an item the prioritized order asks for, and how many more it still needs. */
   orderNeed(item) { const x = this.priorityOrder()?.items.find((i) => i.item === item); return x ? x.qty : 0; }
   orderShort(item) { const n = this.orderNeed(item); return n ? Math.max(0, n - this.haveAll(item)) : 0; }
+  /**
+   * Everything a prioritized order still needs made or gathered, with how many
+   * more: its own items, plus what workshops need to make them, two steps down
+   * (sugar cane for the sugar in a cake). Worked out once per tick.
+   */
+  priorityWanted() {
+    const o = this.priorityOrder();
+    if (!o) return null;
+    if (this._pw && this._pwT === this.time && this._pwO === o) return this._pw;
+    const want = new Map();
+    for (const x of o.items) { const n = this.orderShort(x.item); if (n > 0) want.set(x.item, n); }
+    const lvl = this.state.level;
+    for (let pass = 0; pass < 2; pass++) for (const b of this.bldgs) for (const r of DEFS[b.type].recipes) {
+      const n = want.get(r.out);
+      if (!n || (r.level || DEFS[b.type].level) > lvl) continue;
+      for (const k in r.in) { const more = r.in[k] * n - this.haveAll(k); if (more > 0) want.set(k, Math.max(want.get(k) || 0, more)); }
+    }
+    this._pw = want; this._pwT = this.time; this._pwO = o;
+    return want;
+  }
   fairShare() { return Math.max(6, Math.floor(this.capacity / Math.max(1, (this.producing || new Set()).size))); }
   takeItem(item, qty) {
     const got = Math.min(qty, this.have(item));
