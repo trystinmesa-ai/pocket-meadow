@@ -998,6 +998,25 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(['sugar', 'flour'].includes(S.curRecipe(w, mill).out), 'So the mill makes what the cake needs');
 }
 
+// 35. a full tray of one product never stops another (the stuck mill)
+{
+  const S = await import('../js/sim.js');
+  const w = empty(), s = w.state; rich(w, 12, 1e6);
+  let mill; for (let y = 10; y < 34 && !mill; y++) for (let x = 8; x < 40 && !mill; x++) if (E.place(w, 'mill', x, y) === '') mill = w.objAt(x, y);
+  newWorker(s, 'artisan', 'Art'); for (const x of s.workers) { x.x = 20.5; x.y = 20.5; }
+  w.rebuild();
+  // flour fills the mill's tray and the barn is too full to take it; sugar cane is waiting
+  mill.out = { flour: S.outCap(mill) }; mill.recipe = 'auto'; mill.cur = 'flour';
+  s.inv = { sugarcane: 10, carrot: w.capacity - 10 };
+  const order = { id: 8101, from: 'Baker Rue', who: 'rue', items: [{ item: 'sugar', qty: 2 }], reward: 50, xp: 1 };
+  s.orders.push(order); E.prioritizeOrder(w, order);
+  let started = null;
+  for (let i = 0; i < 300 && !started; i++) { run(w, 2, true); if (mill.cur === 'sugar' && mill.prog > 0) started = { flour: mill.out.flour || 0 }; }
+  ok(started && started.flour >= S.outCap(mill), 'The mill starts sugar while its flour tray is still full', JSON.stringify(started));
+  run(w, 600, true);
+  ok((mill.out.sugar || 0) + w.haveAll('sugar') >= 2, 'The mill makes the sugar the order needs', `sugar ${w.haveAll('sugar')}, tray ${JSON.stringify(mill.out)}`);
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

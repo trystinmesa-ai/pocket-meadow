@@ -4,7 +4,7 @@ import { ACHIEVEMENTS, achReward, HATS, discovered, DEFS, ITEMS, CROPS, USES, SO
   MAX_WORKER_LEVEL, workerXpNeeded, MAP, TILE, parcelCost, parcelLevel, levelReward, MAX_LEVEL } from './data.js';
 import { doorTile, sellPrice, storeCap, cropUnlocked, PW } from './world.js';
 import * as E from './economy.js';
-import { savedForOrder, curRecipe, recipesFor, outTotal, outCap, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime, PANTRY, pantryCap, pantryUsed, pantryItems } from './sim.js';
+import { savedForOrder, curRecipe, recipesFor, outTotal, outCap, outFull, animalCount, animalCap, feedCap, hiveCap, hiveRate, craftTime, PANTRY, pantryCap, pantryUsed, pantryItems } from './sim.js';
 import { img, itemImg, iconURL } from './art/icons.js';
 import { itemURL } from './art/items.js';
 import { buildingSprite } from './art/buildings.js';
@@ -1184,7 +1184,7 @@ export class UI {
         else if (o.off) st = 'Not making anything. Its pantry can still be used for orders, selling and other workshops.';
         else if (!r) st = 'Nothing to make yet: waiting for ingredients';
         else if (savedForOrder(w, r)) st = `Paused: saving ${ITEMS[savedForOrder(w, r)].name.toLowerCase()} for your prioritized order`;
-        else if (n >= outCap(o)) st = 'Output full: waiting for pickup';
+        else if (outFull(o, r.out)) st = `${ITEMS[r.out].name} tray full: waiting for pickup${w.roomFor(r.out) <= 0 ? ' (no room for it in the barn right now)' : ''}`;
         else if (o.prog > 0) st = `Paused at ${Math.floor(o.prog * 100)}%: waiting for an artisan`;
         else {
           const miss = Object.keys(r.in).filter((k) => (o.inp[k] || 0) < r.in[k]);
@@ -1195,7 +1195,7 @@ export class UI {
         else if (!o._busy && !s.workers.some((x) => x.role === 'artisan') && /artisan/.test(st)) st += '<small class="next">No artisan yet: others only help when they are free.</small>';
         const inp = pantryItems(s, o).map((k) => `<span class="pi-slot ${o.inp[k] ? '' : 'empty'}">${itemImg(k)}${o.inp[k] || 0}</span>`).join('') + ` <small>(${pantryUsed(o)}/${pantryCap(o)})</small>`;
         const out = n ? Object.entries(o.out).map(([k, v]) => `${itemImg(k)}${v}`).join(' ') : '—';
-        return { st, inp, out: `${out} <small>(${n}/${outCap(o)})</small>`, pb: `<i style="width:${o.prog * 100}%"></i>` };
+        return { st, inp, out: `${out} <small>(up to ${outCap(o)} of each)</small>`, pb: `<i style="width:${o.prog * 100}%"></i>` };
       };
       const v = info();
       const opts = `<option value="auto" ${o.recipe === 'auto' ? 'selected' : ''}>Auto (best available)</option>` + list.map((r) => `<option value="${r.out}" ${o.recipe === r.out ? 'selected' : ''}>${ITEMS[r.out].name}</option>`).join('');

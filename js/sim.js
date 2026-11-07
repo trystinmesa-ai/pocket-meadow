@@ -34,6 +34,9 @@ export const feedCap = (a) => 8 + 6 * a.lvl;
 export const hiveCap = (h) => DEFS[h.type].hive.cap + 2 * (h.lvl - 1);
 export const hiveRate = (h) => (h.type === 'beehive' ? 1 + Math.min(1, 0.1 * (h._flowers || 0)) : 1) * (1 + 0.25 * (h.lvl - 1));
 export const outCap = (b) => 4 + 3 * b.lvl;
+// each product has its own space in the output tray, so a pile of flour waiting
+// for pickup never stops the mill making sugar
+export const outFull = (b, item) => (b.out[item] || 0) >= outCap(b);
 export const outTotal = (b) => { let n = 0; for (const k in b.out) n += b.out[k]; return n; };
 
 export function recipesFor(state, b) {
@@ -736,9 +739,8 @@ const FIND = {
   operate(world, w) {
     const b = nearest(world.bldgs, w, (o) => {
       if (o.off || o._co || bad(world, o)) return false;
-      if (outTotal(o) >= outCap(o)) return false;
       const r = curRecipe(world, o);
-      return r && (o.prog > 0 || (hasInputs(o, r) && !savedForOrder(world, r)));
+      return r && (o.prog > 0 || (!outFull(o, r.out) && hasInputs(o, r) && !savedForOrder(world, r)));
     });
     if (!b) return null;
     const [x, y] = doorTile(b);
@@ -1018,7 +1020,7 @@ function doGo(world, w, s, dt, fast) {
 function doCraft(world, w, s, dt) {
   const b = s.b;
   const r = world.byId.has(b.id) ? curRecipe(world, b) : null;
-  const stop = !r || s.done >= s.max || (b.prog <= 0 && (b.off || !hasInputs(b, r) || outTotal(b) >= outCap(b) || savedForOrder(world, r)));
+  const stop = !r || s.done >= s.max || (b.prog <= 0 && (b.off || !hasInputs(b, r) || outFull(b, r.out) || savedForOrder(world, r)));
   if (stop) { w._hidden = false; b._busy = false; w.job.i++; return dt; }
   if (b.prog <= 0) {
     for (const k in r.in) { b.inp[k] -= r.in[k]; if (!b.inp[k]) delete b.inp[k]; }
