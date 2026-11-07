@@ -1017,6 +1017,35 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok((mill.out.sugar || 0) + w.haveAll('sugar') >= 2, 'The mill makes the sugar the order needs', `sugar ${w.haveAll('sugar')}, tray ${JSON.stringify(mill.out)}`);
 }
 
+// 36. a prioritized order comes first for trees, animals and pickups too
+{
+  const firstJob = (w, who) => { w.state.workers.forEach((x) => { x.job = null; }); for (let i = 0; i < 40 && !who().job; i++) run(w, 0.25, true); return who().job && who().job.kind; };
+  // trees: a farmer with ripe wheat all around still goes for the apples
+  const w = fresh(), s = w.state; rich(w, 12, 1e6);
+  for (const p of w.plots) { p.st = 'ripe'; p.p = 1; }
+  let tree; for (let y = 10; y < 34 && !tree; y++) for (let x = 8; x < 40 && !tree; x++) if (E.place(w, 'appletree', x, y) === '') tree = w.objAt(x, y);
+  ok(!!tree, 'Test tree placed');
+  tree.p = 1; w.rebuild();
+  ok(firstJob(w, () => s.workers[0]) === 'harvest', 'Without a priority the farmer harvests the wheat first');
+  const order = { id: 8201, from: 'Baker Rue', who: 'rue', items: [{ item: 'apple', qty: 4 }], reward: 50, xp: 1 };
+  s.orders.push(order); E.prioritizeOrder(w, order);
+  s.workers[0].carry = null;
+  ok(firstJob(w, () => s.workers[0]) === 'pickTree', 'With apples prioritized the farmer picks the tree first');
+  run(w, 120, true);
+  ok(w.haveAll('apple') >= 4, 'And the apples reach storage', `apples ${w.haveAll('apple')}`);
+  // animals: a rancher fetches even a single egg straight away
+  const w2 = empty(), s2 = w2.state; rich(w2, 12, 1e6);
+  let coop; for (let y = 10; y < 34 && !coop; y++) for (let x = 8; x < 40 && !coop; x++) if (E.place(w2, 'coop', x, y) === '') coop = w2.objAt(x, y);
+  newWorker(s2, 'rancher', 'Ro'); s2.workers[0].x = 20.5; s2.workers[0].y = 20.5; w2.rebuild();
+  coop.out = 1; coop.feed = 100; coop.off = true;
+  const o2 = { id: 8202, from: 'Baker Rue', who: 'rue', items: [{ item: 'egg', qty: 1 }], reward: 50, xp: 1 };
+  s2.orders.push(o2); E.prioritizeOrder(w2, o2);
+  ok(firstJob(w2, () => s2.workers[0]) === 'collectAnimal', 'A prioritized egg is gathered right away');
+  // and without a priority nothing changes for anyone
+  E.prioritizeOrder(w2, o2);
+  ok(!s2.priority, 'Tapping Prioritize again turns it off', String(s2.priority));
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

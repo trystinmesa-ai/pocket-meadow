@@ -529,11 +529,14 @@ function resolveDeliver(world, w, job, s) {
 }
 
 // ---------- job finders ----------
+// During the priority pass (see assignJob) world._want holds what a prioritized
+// order needs, and the gathering jobs below only take those items.
+const wanted = (world, item) => !world._want || world._want.has(item);
 const FIND = {
   harvest(world, w) {
     if (!world.avail.ripe) return null;
     // a crop with no room waits ripe in its field, so slower crops still get their space
-    const ready = (o) => o.st === 'ripe' && !o._c && !bad(world, o) && canStore(world, o.crop);
+    const ready = (o) => o.st === 'ripe' && !o._c && !bad(world, o) && wanted(world, o.crop) && canStore(world, o.crop);
     // crops a prioritized order still needs (or that go into what it needs) come first
     const pw = world.priorityWanted();
     const p = (pw && nearest(world.plots, w, (o) => ready(o) && pw.has(o.crop))) || nearest(world.plots, w, ready);
@@ -586,7 +589,7 @@ const FIND = {
   },
   pickTree(world, w) {
     if (!world.avail.ripeTrees) return null;
-    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && canStore(world, DEFS[o.type].fruit));
+    const t = nearest(world.trees, w, (o) => o.p >= 1 && !o._c && !bad(world, o) && wanted(world, DEFS[o.type].fruit) && canStore(world, DEFS[o.type].fruit));
     if (!t) return null;
     const [ax, ay] = accessTile(world, t);
     const d = DEFS[t.type];
@@ -606,7 +609,7 @@ const FIND = {
   },
   haulPile(world, w) {
     if (!world.avail.piles) return null;
-    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && canStore(world, o.item));
+    const p = nearest(world.state.piles, w, (o) => !o._c && !bad(world, o) && wanted(world, o.item) && canStore(world, o.item));
     if (!p) return null;
     const job = new Job(w, 'haulPile', `Carrying ${ITEMS[p.item].name}`).claim(p, '_c');
     pickupPileSteps(world, w, job, p);
@@ -617,7 +620,8 @@ const FIND = {
     const cap = world.fx.carry;
     const b = nearest(world.bldgs, w, (o) => {
       if (o._cc || bad(world, o)) return false;
-      if (!Object.keys(o.out).some((k) => canStore(world, k))) return false;
+      if (!Object.keys(o.out).some((k) => wanted(world, k) && canStore(world, k))) return false;
+      if (world._want) return true; // a prioritized item: fetch it right away
       const n = outTotal(o);
       return n >= Math.min(cap, 2) || (n > 0 && (o.prog <= 0 || n >= outCap(o)));
     });
@@ -626,7 +630,8 @@ const FIND = {
     const job = new Job(w, 'collect', `Collecting from the ${DEFS[b.type].name}`).claim(b, '_cc');
     job.go(x, y, b.id).do('load', wDur(world, w, 0.6), () => {
       let item = null;
-      for (const k in b.out) if (canStore(world, k) && (!item || b.out[k] > b.out[item])) item = k;
+      const pw = world.priorityWanted();
+      for (const k in b.out) if (canStore(world, k) && (!item || (pw && pw.has(k)) > (pw && pw.has(item)) || ((pw && pw.has(k)) === (pw && pw.has(item)) && b.out[k] > b.out[item]))) item = k;
       if (!item) return;
       const take = Math.min(world.fx.carry, b.out[item]);
       b.out[item] -= take; if (!b.out[item]) delete b.out[item];
@@ -681,7 +686,9 @@ const FIND = {
     const list = world.animals.concat(world.hives);
     const a = nearest(list, w, (o) => {
       if (o._cc || bad(world, o)) return false;
-      if (!canStore(world, DEFS[o.type].hive ? DEFS[o.type].hive.item : DEFS[o.type].animal.item)) return false;
+      const it = DEFS[o.type].hive ? DEFS[o.type].hive.item : DEFS[o.type].animal.item;
+      if (!wanted(world, it) || !canStore(world, it)) return false;
+      if (world._want && o.out > 0) return true;
       const full = DEFS[o.type].hive ? hiveCap(o) : animalCap(o);
       return o.out >= Math.min(cap, full) || o.out >= full;
     });
@@ -700,7 +707,8 @@ const FIND = {
   },
   greenhouse(world, w) {
     if (!world.avail.gh) return null;
-    const g = nearest(world.greenhouses, w, (o) => !o._cg && !bad(world, o) && ghTasks(world, o).length);
+    const g = nearest(world.greenhouses, w, (o) => !o._cg && !bad(world, o) && ghTasks(world, o).length
+      && (!world._want || o.beds.some((b) => b.st === 'ripe' && world._want.has(b.crop))));
     if (!g) return null;
     const [x, y] = accessTile(world, g);
     const job = new Job(w, 'greenhouse', 'Tending the Greenhouse').claim(g, '_cg');
@@ -904,6 +912,7 @@ function wanderJob(world, w, fast) {
   return job.do(pose, 2.5 + R() * 4);
 }
 
+const GATHER = ['harvest', 'greenhouse', 'pickTree', 'collectAnimal', 'haulPile', 'collect'];
 function assignJob(world, w, fast) {
   if (w.carry) {
     const job = new Job(w, 'deliver', `Carrying ${ITEMS[w.carry.item].name}`);
@@ -912,7 +921,17 @@ function assignJob(world, w, fast) {
   }
   const own = ROLES[w.role].tasks;
   let job = null;
-  for (const t of own) if ((job = FIND[t](world, w))) break;
+  // a prioritized order comes first: gather what it needs (crops, fruit, eggs,
+  // workshop goods) before any other work
+  const pw = world.priorityWanted();
+  if (pw && pw.size) {
+    world._want = pw;
+    try {
+      const tasks = own.concat(world.state.settings.helpers ? ALL_TASKS.filter((t) => !own.includes(t)) : []);
+      for (const t of tasks) if (GATHER.includes(t) && (job = FIND[t](world, w))) break;
+    } finally { world._want = null; }
+  }
+  if (!job) for (const t of own) if ((job = FIND[t](world, w))) break;
   if (!job && world.state.settings.helpers) {
     for (const t of ALL_TASKS) {
       if (own.includes(t)) continue;
