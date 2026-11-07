@@ -911,7 +911,7 @@ export class UI {
     } else {
       html += `<div class="help">
         <p><b>The idea:</b> lay fields, and your farmhands plant, water, harvest and carry everything to storage. Sell goods, then spend coins to grow.</p>
-        <p><b>Controls:</b> drag to move around, pinch or scroll to zoom. Tap anything to see it up close. In build mode, drag to paint fields, paths and fences (use two fingers or right-drag to move the view).</p>
+        <p><b>Controls:</b> drag to move around, pinch or scroll to zoom. Tap anything to see it up close. Press and hold anything you built to pick it up, then drag it to a new spot and let go. In build mode, drag to paint fields, paths and fences (use two fingers or right-drag to move the view).</p>
         <p><b>Farmhands:</b> each has a job. Farmers tend fields and trees, Haulers carry harvests and stock workshops, Artisans run workshops, Ranchers care for animals and bees. When their own work is done they help elsewhere.</p>
         <p><b>Making things:</b> workshops turn crops into goods worth much more. Tap a workshop to pick a recipe, or leave it on Auto to make the most valuable thing it can.</p>
         <p><b>While you are away:</b> the farm keeps running for up to ${w.fx.offlineH} hours (Night Shift adds more). Everything they gather waits in storage for you to sell when you're back, so upgrade your barn to hold more.</p>
@@ -1413,7 +1413,7 @@ export class UI {
         <button class="btn icon" data-act="cancelmode" aria-label="Done">${m.k === 'paint' ? 'Done' : img('x')}</button>`;
     } else if (m.k === 'move') {
       const why = this.w.canPlace(m.obj.type, m.x, m.y, m.obj.id);
-      html = `<img class="thumb sm" src="${thumb(m.obj.type, m.obj.crop)}" alt=""><div class="pt"><b>Move ${DEFS[m.obj.type].name}</b><small>${why ? `<span class="why">${why}</span>` : 'Tap the new spot, then press the check.'}</small></div>
+      html = `<img class="thumb sm" src="${thumb(m.obj.type, m.obj.crop)}" alt=""><div class="pt"><b>Move ${DEFS[m.obj.type].name}</b><small>${why ? `<span class="why">${why}</span>` : m.held ? 'Drag it where you like and let go.' : 'Tap or drag it to a new spot, then press the check.'}</small></div>
         <button class="btn green icon" data-act="confirm" aria-label="Move here" ${this.w.canPlace(m.obj.type, m.x, m.y, m.obj.id) ? 'disabled' : ''}>${img('check')}</button><button class="btn icon" data-act="cancelmode" aria-label="Cancel">${img('x')}</button>`;
     } else if (m.k === 'remove') {
       html = `${img('trash', 'pi big')}<div class="pt"><b>Remove things</b><small>Tap or drag over things to remove them (half the cost back).</small></div><button class="btn icon" data-act="cancelmode">Done</button>`;
@@ -1583,6 +1583,59 @@ export class UI {
     }
   }
 
+  // ---------- press and hold to pick something up ----------
+  movable(o) {
+    if (!o || o.role || !o.type || !DEFS[o.type]) return false;
+    const d = DEFS[o.type];
+    return d.cat !== 'debris' && !(d.fixed && d.cat !== 'special' && d.cat !== 'house');
+  }
+  canHold(sx, sy) {
+    if (this.mode || this.inScene() || this.g.visitWorld || this.modalOpen) return false;
+    return this.movable(this.pickAt(sx, sy));
+  }
+  holdStart(sx, sy) {
+    const o = this.pickAt(sx, sy);
+    if (!this.canHold(sx, sy) || !o) return false;
+    const [tx, ty] = this.tileAt(sx, sy);
+    if (this.sheet) this.openSheet(null);
+    if (this.sel) this.select(null, true);
+    try { navigator.vibrate?.(15); } catch {}
+    // keep the spot you grabbed under your finger as it moves
+    this.setMode({ k: 'move', obj: o, x: o.x, y: o.y, grab: [Math.max(0, tx - o.x), Math.max(0, ty - o.y)], held: true });
+    return true;
+  }
+  /** In move mode, pressing on the outline grabs it to drag again. */
+  grabNow(sx, sy) {
+    const m = this.mode;
+    if (!m || m.k !== 'move' || m.held) return false;
+    const [tx, ty] = this.tileAt(sx, sy), d = DEFS[m.obj.type];
+    if (tx < m.x || ty < m.y || tx >= m.x + d.w || ty >= m.y + d.h) return false;
+    m.held = true; m.grab = [tx - m.x, ty - m.y];
+    this.renderPlacebar();
+    return true;
+  }
+  holdMove(sx, sy) {
+    const m = this.mode;
+    if (!m || m.k !== 'move' || !m.held) return;
+    const [tx, ty] = this.tileAt(sx, sy);
+    const x = tx - m.grab[0], y = ty - m.grab[1];
+    if (x === m.x && y === m.y) return;
+    m.x = x; m.y = y;
+    this.g.R.overlay = this.overlay(); this.renderPlacebar(true);
+  }
+  holdEnd(sx, sy, moved) {
+    const m = this.mode;
+    if (!m || m.k !== 'move' || !m.held) return;
+    m.held = false;
+    const changed = m.x !== m.obj.x || m.y !== m.obj.y;
+    if (!moved || !changed) { this.renderPlacebar(); return; } // let go in place: tap a new spot or drag again
+    const why = this.w.canPlace(m.obj.type, m.x, m.y, m.obj.id);
+    if (why) { this.toast(why, 'bad'); this.renderPlacebar(); return; } // stays picked up: try another spot
+    const err = E.move(this.w, m.obj, m.x, m.y);
+    if (err) { this.toast(err, 'bad'); return; }
+    this.g.dirty();
+    this.setMode(null);
+  }
   isPaint() { return this.mode && (this.mode.k === 'paint' || this.mode.k === 'remove'); }
   paint(sx, sy, first) {
     if (first) this.stroke = { last: null, errs: new Set(), n: 0, cost: 0 };

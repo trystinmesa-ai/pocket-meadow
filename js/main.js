@@ -33,6 +33,8 @@ class Game {
     this.ui = new UI(this);
     this.input = attachInput(this.canvas, this.R, {
       tap: (x, y) => this.ui.tap(x, y), hover: (x, y) => this.ui.hover(x, y),
+      canHold: (x, y) => this.ui.canHold(x, y), grabNow: (x, y) => this.ui.grabNow(x, y), holdStart: (x, y) => this.ui.holdStart(x, y),
+      holdMove: (x, y) => this.ui.holdMove(x, y), holdEnd: (x, y, moved) => this.ui.holdEnd(x, y, moved),
       isPaint: () => this.ui.isPaint(), paint: (x, y, f) => this.ui.paint(x, y, f), paintEnd: () => this.ui.paintEnd(),
       escape: () => this.ui.escape(),
     });

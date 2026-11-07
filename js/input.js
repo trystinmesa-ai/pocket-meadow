@@ -1,11 +1,15 @@
 // Touch and mouse: one-finger drag pans (or paints in paint mode), pinch and
-// wheel zoom, tap selects. Right/middle drag always pans on desktop.
+// wheel zoom, tap selects, press and hold picks a thing up to drag it.
+// Right/middle drag always pans on desktop.
 
 export function attachInput(canvas, R, handlers) {
   const pts = new Map();
   let drag = null;      // { x, y, sx, sy, moved, paint, pan }
   let pinch = null;     // { d, cx, cy, z, wx, wy }
   let vel = [0, 0], lastMove = 0;
+  let holdTimer = 0;
+  const HOLD_MS = 450;
+  const stopHold = () => { clearTimeout(holdTimer); holdTimer = 0; };
 
   const local = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
@@ -25,8 +29,10 @@ export function attachInput(canvas, R, handlers) {
     pts.set(e.pointerId, [x, y]);
     vel = [0, 0];
     if (pts.size === 2) {
-      // second finger: cancel any paint and start a pinch
+      // second finger: cancel any paint or pick-up and start a pinch
+      stopHold();
       if (drag && drag.paint) handlers.paintEnd?.();
+      if (drag && drag.carry) handlers.holdEnd?.(drag.x, drag.y, false);
       const [[x1, y1], [x2, y2]] = [...pts.values()];
       const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
       pinch = { d: Math.hypot(x2 - x1, y2 - y1), cx, cy, z: R.cam.z * (R.cam.free ? 1 : 1) };
@@ -36,6 +42,18 @@ export function attachInput(canvas, R, handlers) {
     if (pts.size > 2) return;
     const pan = e.button === 1 || e.button === 2 || e.shiftKey;
     drag = { x, y, sx: x, sy: y, moved: false, pan, paint: false, t: performance.now() };
+    // something already picked up: grab it and drag straight away
+    if (!pan && handlers.grabNow?.(x, y)) { drag.carry = true; drag.carryMoved = false; return; }
+    // press and hold (without moving) on something movable picks it up
+    stopHold();
+    if (!pan && handlers.canHold?.(x, y)) {
+      const d = drag;
+      holdTimer = setTimeout(() => {
+        holdTimer = 0;
+        if (drag !== d || d.moved || pts.size !== 1) return;
+        if (handlers.holdStart?.(d.x, d.y)) { d.carry = true; d.carryMoved = false; vel = [0, 0]; }
+      }, HOLD_MS);
+    }
   });
 
   canvas.addEventListener('pointermove', (e) => {
@@ -52,9 +70,16 @@ export function attachInput(canvas, R, handlers) {
       return;
     }
     if (!drag) return;
+    if (drag.carry) { // dragging a picked-up thing around
+      if (Math.hypot(x - drag.sx, y - drag.sy) > 4) drag.carryMoved = true;
+      drag.x = x; drag.y = y;
+      handlers.holdMove?.(x, y);
+      return;
+    }
     const dx = x - drag.x, dy = y - drag.y;
     if (!drag.moved && Math.hypot(x - drag.sx, y - drag.sy) > 7) {
       drag.moved = true;
+      stopHold();
       if (!drag.pan && handlers.isPaint?.()) { drag.paint = true; handlers.paint?.(drag.sx, drag.sy, true); }
     }
     if (!drag.moved) return;
@@ -75,6 +100,7 @@ export function attachInput(canvas, R, handlers) {
   const up = (e) => {
     if (!pts.has(e.pointerId)) return;
     pts.delete(e.pointerId);
+    stopHold();
     if (pinch) {
       if (pts.size < 2) {
         const c = pinch;
@@ -87,6 +113,7 @@ export function attachInput(canvas, R, handlers) {
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.carry) { handlers.holdEnd?.(d.x, d.y, d.carryMoved && e.type === 'pointerup'); return; }
     if (!d.moved && e.type === 'pointerup' && !d.pan) handlers.tap?.(d.sx, d.sy);
     else if (d.paint) handlers.paintEnd?.();
     else if (performance.now() - lastMove > 60) vel = [0, 0];
