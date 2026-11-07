@@ -538,7 +538,7 @@ export class UI {
 
   sheet_market() {
     const w = this.w, s = this.s;
-    const items = Object.keys(ITEMS).filter((k) => w.haveAll(k) > 0);
+    const items = Object.keys(ITEMS).filter((k) => !ITEMS[k].find && w.haveAll(k) > 0);
     const used = w.used();
     let html = `<div class="store"><div class="bar big ${used >= w.capacity ? 'full' : ''}"><i style="width:${Math.min(100, (used / w.capacity) * 100)}%"></i></div>
       <span data-live="store">${fmt(used)} / ${fmt(w.capacity)} stored</span><span class="hint">Prices +${Math.round((w.fx.sell - 1) * 100)}% from haggling & charm</span></div>
@@ -693,7 +693,7 @@ export class UI {
       const prio = s.priority === o.id;
       html += `<div class="order ${ok ? 'ready' : ''} ${prio ? 'priority' : ''}"><div class="of">${esc(o.from)} would like:${v ? ` <span class="hearts">${this.heartsHTML(s.friends[v.id])}</span>` : ''}</div><div class="oi">${o.items.map((x) => {
         const have = w.haveAll(x.item);
-        return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}${fav(x.item)}</span>`;
+        return `<span class="need ${have >= x.qty ? 'ok' : ''}">${itemImg(x.item)}<b data-live="o${o.id}${x.item}">${fmt(Math.min(have, x.qty))}/${x.qty}</b> ${ITEMS[x.item].name}${fav(x.item)}${ITEMS[x.item].find ? ` <small title="Dug up in the quarry">${img('pick')}</small>` : ''}</span>`;
       }).join('')}</div>
         <div class="row"><span>Reward ${coin(o.reward)} <span class="xp">+${fmt(o.xp)} XP</span>${v ? ` <span class="xp">+${E.friendPoints(o)} ${img('heart')}</span>` : ''}</span>
         <span><button class="btn small" data-act="skip" data-id="${o.id}">Skip</button> <button class="btn small green" data-act="fill" data-id="${o.id}" ${ok ? '' : 'disabled'}>Deliver</button></span></div>
@@ -707,9 +707,9 @@ export class UI {
   priorityText(o) {
     const w = this.w, short = o.items.map((x) => [x.item, w.orderShort(x.item)]).filter(([, n]) => n > 0);
     if (!short.length) return 'Everything is ready to deliver!';
-    const total = short.reduce((a, [, n]) => a + n, 0);
+    const total = short.reduce((a, [k, n]) => a + (ITEMS[k].find ? 0 : n), 0); // finds go on their own shelf
     const room = total > w.free() ? ` Make ${fmt(total - w.free())} more space in the barn so it all fits.` : '';
-    return `Saving up: ${short.map(([k, n]) => `${fmt(n)} more ${ITEMS[k].name}`).join(', ')}.${room}`;
+    return `Saving up: ${short.map(([k, n]) => `${fmt(n)} more ${ITEMS[k].name}${ITEMS[k].find ? ' (your miners might dig one up)' : ''}`).join(', ')}.${room}`;
   }
   heartsHTML(pts = 0) {
     const h = heartsOf(pts);

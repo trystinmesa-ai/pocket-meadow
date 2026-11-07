@@ -8,7 +8,7 @@ import { stepQuarry } from './quarry.js';
 import { idx, doorTile, hash2, cropUnlocked, producingNow } from './world.js';
 import { findPath } from './path.js';
 import { seasonAt, festivalOn, festivalId, seasonGrowth, canPlantNow } from './seasons.js';
-import { FESTIVAL_ORDER_EVERY, FESTIVAL_SLOTS } from './data.js';
+import { FESTIVAL_ORDER_EVERY, FESTIVAL_SLOTS, FINDS } from './data.js';
 import { earn, canAffordSeeds, paySeeds } from './economy.js';
 
 const R = Math.random;
@@ -387,6 +387,17 @@ function festivalTick(world, now) {
   if (s.fest.orders.length >= FESTIVAL_SLOTS) s.fest.next = Math.max(s.fest.next, now);
 }
 
+export const FIND_ORDER_CHANCE = 0.2;
+function findForOrder(world) {
+  const s = world.state;
+  if (!s.quarry || R() >= FIND_ORDER_CHANCE) return null;
+  const owned = Object.keys(s.finds || {}).filter((k) => s.finds[k] > 0);
+  const dig = FINDS.slice(0, s.quarry.zones || 1).flat();
+  const pool = owned.length && R() < 0.75 ? owned : dig;
+  if (!pool.length) return null;
+  const k = pool[Math.floor(R() * pool.length)];
+  return { item: k, qty: Math.max(1, Math.min(2, s.finds[k] || 1)) };
+}
 export function makeOrder(world, scale = 1) {
   const s = world.state;
   const pool = producible(world);
@@ -400,6 +411,10 @@ export function makeOrder(world, scale = 1) {
   for (const it of shuffled) { if (picks.length >= n) break; if (!picks.includes(it)) picks.push(it); }
   const budget = 30 * Math.pow(1.5, s.level) * scale;
   const items = picks.map((it) => ({ item: it, qty: Math.max(1, Math.min(60, Math.round((budget / picks.length) / ITEMS[it].value * (0.7 + R() * 0.6)))) }));
+  // now and then a neighbour also asks for something dug up in the quarry:
+  // one you already have, or one your open quarry zones can turn up
+  const f = findForOrder(world);
+  if (f) items.push(f);
   const value = items.reduce((v, x) => v + ITEMS[x.item].value * x.qty, 0);
   return {
     id: s.nextId++, from: who.name, who: who.id, items,

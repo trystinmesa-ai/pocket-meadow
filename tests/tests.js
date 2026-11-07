@@ -1084,6 +1084,32 @@ const rich = (w, level = 12, coins = 1e7) => { w.state.level = level; w.state.co
   ok(E.donate(w, 'fernfossil') === '' && !s.finds.fernfossil && s.museum.fernfossil, 'The last one can still go to the museum');
 }
 
+// 39. orders sometimes ask for quarry finds
+{
+  const S = await import('../js/sim.js');
+  const { FINDS } = await import('../js/data.js');
+  const w = fresh(), s = w.state; rich(w, 12, 1e6);
+  const none = Array.from({ length: 200 }, () => S.makeOrder(w)).filter((o) => o && o.items.some((x) => ITEMS[x.item].find));
+  ok(none.length === 0, 'No quarry yet: orders never ask for finds');
+  s.quarry = { zones: 1 }; s.finds = { trilobite: 3 };
+  const orders = Array.from({ length: 400 }, () => S.makeOrder(w)).filter(Boolean);
+  const withF = orders.filter((o) => o.items.some((x) => ITEMS[x.item].find));
+  const allowed = new Set(FINDS[0].concat('trilobite'));
+  ok(withF.length > 30 && withF.length < 140, 'About one order in five asks for a find', `${withF.length}/400`);
+  ok(withF.every((o) => o.items.filter((x) => ITEMS[x.item].find).every((x) => allowed.has(x.item) && x.qty >= 1 && x.qty <= 2)), 'Only finds you have or can dig up, one or two');
+  ok(withF.every((o) => o.items.some((x) => !ITEMS[x.item].find)), 'The find comes with the usual farm goods');
+  // delivering takes it off the finds shelf
+  w.state.inv = {}; w.addItem('wheat', 5); s.finds = { ammonite: 2 };
+  const o = { id: 8301, from: 'Baker Rue', who: 'rue', items: [{ item: 'wheat', qty: 5 }, { item: 'ammonite', qty: 2 }], reward: 500, xp: 10 };
+  s.orders.push(o);
+  ok(w.haveAll('ammonite') === 2 && E.canFill(w, o), 'Finds on the shelf count toward an order');
+  // prioritizing it doesn't hold barn space for the find
+  E.prioritizeOrder(w, o);
+  ok(!w.priorityWanted().has('ammonite'), 'A prioritized find takes no barn space');
+  ok(E.fillOrder(w, o) === '' && !s.finds.ammonite && !w.have('wheat'), 'Delivering takes the finds off the shelf');
+  ok(E.canFill(w, { items: [{ item: 'ammonite', qty: 1 }] }) === false, 'Without one the order waits');
+}
+
 // ---- report ----
 const pass = results.filter((r) => r.pass).length;
 document.getElementById('out').innerHTML = `<h2>${pass}/${results.length} passed</h2>` + results.map((r) =>

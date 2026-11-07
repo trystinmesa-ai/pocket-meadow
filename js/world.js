@@ -261,7 +261,7 @@ export class World {
     if (!o) return null;
     if (this._pw && this._pwT === this.time && this._pwO === o) return this._pw;
     const want = new Map();
-    for (const x of o.items) { const n = this.orderShort(x.item); if (n > 0) want.set(x.item, n); }
+    for (const x of o.items) { if (ITEMS[x.item].find) continue; const n = this.orderShort(x.item); if (n > 0) want.set(x.item, n); }
     const lvl = this.state.level;
     for (let pass = 0; pass < 2; pass++) for (const b of this.bldgs) for (const r of DEFS[b.type].recipes) {
       const n = want.get(r.out);
@@ -282,8 +282,14 @@ export class World {
   // waiting for pickup and pantry stock). Workshops that are switched off give
   // theirs up first, and the recipe a workshop is making right now gives last.
   inBuildings(item) { let n = 0; for (const b of this.bldgs) n += (b.out[item] || 0) + (b.inp[item] || 0); return n; }
-  haveAll(item) { return this.have(item) + this.inBuildings(item); }
+  // quarry finds live on their own shelf, not in the barn
+  haveAll(item) { return ITEMS[item]?.find ? this.state.finds[item] || 0 : this.have(item) + this.inBuildings(item); }
   takeAll(item, qty) {
+    if (ITEMS[item]?.find) {
+      const f = this.state.finds, got = Math.min(qty, f[item] || 0);
+      if (got > 0) { f[item] -= got; if (!f[item]) delete f[item]; }
+      return got;
+    }
     let got = this.takeItem(item, qty);
     const uses = (b) => { const r = DEFS[b.type].recipes.find((x) => x.out === b.cur); return !b.off && r && r.in[item] ? 1 : 0; };
     const list = this.bldgs.filter((b) => b.out[item] || b.inp[item]).sort((a, b) => uses(a) - uses(b) || (b.off ? 1 : 0) - (a.off ? 1 : 0));
