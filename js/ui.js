@@ -438,11 +438,13 @@ export class UI {
   buildTile(type) {
     const w = this.w, s = this.s, d = DEFS[type];
     const lock = s.level < d.level;
+    const have = w.count(type);
+    const owned = ['craft', 'animal', 'storage', 'house', 'utility'].includes(d.cat) ? `<span class="owned ${have ? '' : 'none'}">${have ? `${have} on your farm` : 'None yet'}</span>` : '';
     const cost = E.costOf(w, type);
     const mats = matsFor(type, w.count(type)), bt = buildTime(type, cost);
     const meta = d.charm ? `${img('heart')}+${d.charm} charm` : d.store ? `${img('box')}+${d.store} storage` : d.houses ? `${img('people')} houses ${d.houses}` : d.speed ? `walk ×${d.speed}` : '';
     return `<div class="tile ${lock ? 'locked' : ''}"><img class="thumb" src="${thumb(type)}" alt="">
-      <div class="tn">${d.name}</div><div class="tm">${meta}</div>
+      <div class="tn">${d.name}</div>${owned}<div class="tm">${meta}</div>
       ${d.desc ? `<div class="td">${esc(d.desc)}</div>` : ''}
       ${mats ? `<div class="tmats">${matsHTML(mats, w)}</div><div class="tm">${img('clock')} Builds in ${fmtTime(bt)}</div>` : ''}
       ${d.season ? `<span class="stag ${E.seasonalBlock(w, d) ? '' : 'on'}">${img(d.season)} ${SEASONS.find((x) => x.id === d.season).name} only</span>` : ''}
