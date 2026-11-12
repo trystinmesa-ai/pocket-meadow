@@ -175,6 +175,9 @@ export class UI {
       case 'sheet': this.openSheet(this.sheet === d.v ? null : d.v); break;
       case 'close': this.openSheet(null); break;
       case 'tab': this.tab[d.sheet] = d.v; this.renderSheet(); break;
+      case 'ownedlist': this.ownedOpen = this.ownedOpen === d.type ? null : d.type; this.renderSheet(); break;
+      case 'upgradeo': { const o = w.objects.find((x) => x.id === +d.id); if (o && fail(E.upgradeBuilding(w, o))) { this.toast(`${DEFS[o.type].name} upgraded to level ${o.lvl}!`, 'good'); this.g.dirty(); this.renderSheet(); } break; }
+      case 'viewobj': { const o = w.objects.find((x) => x.id === +d.id); if (o) { const od = DEFS[o.type]; this.openSheet(null); this.goFarm(); this.select(o); this.g.focus((o.x + od.w / 2) * TILE, (o.y + od.h / 2) * TILE); } break; }
       case 'zoom': this.g.input.zoomBy(+d.v); break;
       case 'levelinfo': this.levelInfo(); break;
       case 'donate': if (fail(E.donate(w, d.item))) { this.toast(`${ITEMS[d.item].name} is on display!`, 'good'); this.g.dirty(); this.renderSheet(); } break;
@@ -427,7 +430,7 @@ export class UI {
       for (const [name, cs] of groups) {
         const types = Object.keys(DEFS).filter((k) => cs.includes(DEFS[k].cat) && !DEFS[k].fixed && !DEFS[k].festival);
         types.sort((a, b) => DEFS[a].level - DEFS[b].level);
-        html += `<h3>${name}</h3><div class="grid">${types.map((k) => this.buildTile(k)).join('')}</div>`;
+        html += `<h3>${name}</h3><div class="grid">${types.map((k) => this.buildTile(k) + (this.ownedOpen === k ? this.ownedPanel(k) : '')).join('')}</div>`;
       }
       if (tab === 'build') html = `<p class="hint">Buildings need materials as well as coins: you have ${this.matsLine()}. Farmhands clear fallen branches and rocks on your land for wood and stone. For much more, and for ore, buy land at the edge of the map and follow the trail to the quarry.</p>` + html;
       if (tab === 'decor') html = `<p class="hint">Decorations are just for looks, but each one adds a little charm (charm raises sell prices a bit).</p>` + html;
@@ -439,7 +442,7 @@ export class UI {
     const w = this.w, s = this.s, d = DEFS[type];
     const lock = s.level < d.level;
     const have = w.count(type);
-    const owned = ['craft', 'animal', 'storage', 'house', 'utility'].includes(d.cat) ? `<span class="owned ${have ? '' : 'none'}">${have ? `${have} on your farm` : 'None yet'}</span>` : '';
+    const owned = ['craft', 'animal', 'storage', 'house', 'utility'].includes(d.cat) ? (have ? `<button class="owned ${this.ownedOpen === type ? 'on' : ''}" data-act="ownedlist" data-type="${type}">${have} on your farm ${d.upg ? `${img('up')} Upgrade` : '▾'}</button>` : '<span class="owned none">None yet</span>') : '';
     const cost = E.costOf(w, type);
     const mats = matsFor(type, w.count(type)), bt = buildTime(type, cost);
     const meta = d.charm ? `${img('heart')}+${d.charm} charm` : d.store ? `${img('box')}+${d.store} storage` : d.houses ? `${img('people')} houses ${d.houses}` : d.speed ? `walk ×${d.speed}` : '';
@@ -451,6 +454,23 @@ export class UI {
       ${lock ? `<span class="lock">${img('lock')} Lv ${d.level}</span>` : E.seasonalBlock(w, d) ? `<span class="lock">${img('lock')} ${E.seasonalBlock(w, d)}</span>`
         : d.ribbons ? `<button class="btn small" data-act="pick" data-type="${type}" ${s.ribbons < d.ribbons ? 'disabled' : ''}>${ribbon(d.ribbons)}</button>`
         : `<button class="btn small" data-act="pick" data-type="${type}" ${needAttr(cost, mats)}>${coin(cost)}</button>`}</div>`;
+  }
+
+  // The buildings of one type you already have, each with its own Upgrade button.
+  ownedPanel(type) {
+    const w = this.w, d = DEFS[type];
+    const list = w.objects.filter((o) => o.type === type);
+    if (!list.length) return '';
+    const rows = list.map((o, i) => {
+      let right;
+      if (o.build > 0) right = `<span class="lock">${img('clock')} Being built</span>`;
+      else if (!d.upg) right = '';
+      else if (o.lvl >= d.maxLvl) right = '<span class="max">MAX LEVEL</span>';
+      else { const um = upgMatsFor(o), c = E.bUpgradeCost(o); right = `<button class="btn small green" data-act="upgradeo" data-id="${o.id}" ${needAttr(c, um)}>${img('up')} ${coin(c)}${um ? `<span class="bmats">${matsHTML(um, w)}</span>` : ''}</button>`; }
+      return `<div class="orow"><span class="onm">${list.length > 1 ? `#${i + 1}` : esc(d.name)}${o.lvl ? ` <span class="lv">Lv ${o.lvl}${d.maxLvl ? `/${d.maxLvl}` : ''}</span>` : ''}</span>
+        <button class="btn small" data-act="viewobj" data-id="${o.id}" aria-label="Show on farm" title="Show on farm">${img("eye")}</button>${right}</div>`;
+    }).join('');
+    return `<div class="ownedp"><div class="oh">Your ${esc(d.name)}${list.length > 1 ? ` (${list.length})` : ''}</div>${rows}</div>`;
   }
 
   sheet_workers() {
